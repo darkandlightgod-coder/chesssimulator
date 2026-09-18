@@ -28,6 +28,7 @@
             flex-wrap: wrap; 
             align-items: flex-end; 
             align-content: flex-end;
+            cursor: pointer;
         }
 
         .shelf-bg.drag-over, .staging-bg.drag-over {
@@ -62,7 +63,7 @@
         
         @media (hover: hover) {
             .toy-block:hover {
-                filter: brightness(1.2);
+                filter: brightness(1.1);
                 transform: translateY(-2px);
                 box-shadow: 0 4px 12px rgba(255,255,255,0.2), inset 0 0 0 1px rgba(255,255,255,0.5);
                 z-index: 10;
@@ -77,40 +78,8 @@
             z-index: 50;
         }
 
-        /* 按鈕 UI */
-        .delete-btn, .img-btn {
-            position: absolute;
-            width: 18px;
-            height: 18px;
-            color: white;
-            border-radius: 50%;
-            font-size: 10px;
-            line-height: 18px;
-            text-align: center;
-            cursor: pointer;
-            opacity: 0;
-            transition: opacity 0.2s;
-            z-index: 20;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        }
-        .delete-btn { top: -6px; right: -6px; background: #ef4444; }
-        .img-btn { top: -6px; left: -6px; background: #3b82f6; }
-        .toy-block:hover .delete-btn, .toy-block:hover .img-btn { opacity: 1; }
-
-        .shelf-action-btn { opacity: 0; transition: opacity 0.2s; }
-        .group:hover > .shelf-action-btn, .cabinet-group:hover .cabinet-action-btn { opacity: 1; }
-
-        /* 提示框 Tooltip */
-        #tooltip {
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.1s ease, transform 0.1s ease;
-            transform: translate(-50%, -10px);
-        }
-        #tooltip.visible {
-            opacity: 1;
-            transform: translate(-50%, -45px);
-        }
+        .cabinet-action-btn { opacity: 0; transition: opacity 0.2s; }
+        .cabinet-group:hover .cabinet-action-btn { opacity: 1; }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #1a1a1a; }
@@ -128,8 +97,8 @@
         <div class="p-3 md:p-5 border-b border-[#3d2b1f] bg-[#16120f] flex-shrink-0">
             <h1 class="text-base md:text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-sm md:text-lg">1:1 絕對比例沙盤</span></h1>
             <p class="hidden md:block text-gray-400 text-xs mb-3 leading-relaxed">
-                <strong class="text-amber-400">滑鼠移至玩具上可看尺寸，點擊 🖼️ 可換圖</strong><br>
-                按住層板上緣可拖曳修改高度！
+                <strong class="text-amber-400">滑鼠連點兩下 (雙擊) 玩具或層板即可叫出控制選單！</strong><br>
+                按住層板上緣可拖曳修改高度，手指按住公仔可直接拖曳。
             </p>
             <div class="flex flex-row md:flex-col gap-2 md:gap-3">
                 <button onclick="openModal('add-toy-modal')" class="flex-1 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-1 md:gap-2">
@@ -156,7 +125,6 @@
     <div class="flex-1 bg-[#121212] overflow-auto relative p-4 md:p-8" id="canvas-container">
         <div id="cabinet-canvas" class="flex gap-4 md:gap-8 items-end min-w-max pb-20 pt-10 px-4">
             <!-- 櫃體會透過 JS 插入此處 -->
-            
             <div class="flex items-center h-full pb-4 shrink-0">
                 <button onclick="openModal('add-cabinet-modal')" class="w-12 h-48 md:w-16 md:h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
                     <svg class="w-6 h-6 md:w-8 md:h-8 mb-2 transform group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -166,15 +134,44 @@
         </div>
     </div>
 
-    <!-- Tooltip -->
-    <div id="tooltip" class="fixed z-[100] bg-gray-900/95 text-white border border-amber-500/50 rounded-lg shadow-xl px-4 py-3 text-sm text-center hidden md:block backdrop-blur-sm pointer-events-none"></div>
-
     <!-- Error Modal -->
     <div id="error-modal" class="fixed inset-0 z-[999] bg-black/70 hidden items-center justify-center backdrop-blur-sm px-4">
         <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <h3 class="text-lg md:text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
             <p id="error-message" class="text-gray-300 text-sm md:text-base text-center mb-6 leading-relaxed"></p>
             <button onclick="closeModal('error-modal')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">我知道了</button>
+        </div>
+    </div>
+
+    <!-- Toy Options Modal (Double Click) -->
+    <div id="toy-options-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-2 border-b border-gray-600 pb-2" id="opt-toy-title">玩具名稱</h3>
+            <div class="text-gray-300 text-sm mb-6 space-y-1">
+                <p>面寬佔用： <b class="text-white text-base" id="opt-toy-w"></b> cm</p>
+                <p>高度限制： <b class="text-white text-base" id="opt-toy-h"></b> cm</p>
+            </div>
+            <div class="space-y-3">
+                <button onclick="triggerToyImageUpload()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition-colors text-sm">🖼️ 上傳真實圖片</button>
+                <button onclick="triggerToyDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded transition-colors text-sm" id="opt-toy-del-btn">✖ 刪除玩具 (退回暫存)</button>
+                <button onclick="closeModal('toy-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded transition-colors text-sm">取消關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shelf Options Modal (Double Click) -->
+    <div id="shelf-options-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg md:text-xl font-bold text-emerald-400 mb-2 border-b border-gray-600 pb-2" id="opt-shelf-title">層板名稱</h3>
+            <div class="text-gray-300 text-sm mb-6 space-y-1">
+                <p>當前淨高限制： <b class="text-white text-base" id="opt-shelf-h"></b> cm</p>
+                <p class="text-xs text-gray-400 mt-2">提示：也可以按住層板上緣直接拖曳調整高度</p>
+            </div>
+            <div class="space-y-3">
+                <button onclick="triggerShelfImageUpload()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition-colors text-sm">🖼️ 上傳層板背景圖</button>
+                <button onclick="triggerShelfDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded transition-colors text-sm">✖ 刪除整個層板</button>
+                <button onclick="closeModal('shelf-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded transition-colors text-sm">取消關閉</button>
+            </div>
         </div>
     </div>
 
@@ -276,38 +273,39 @@
 
     <script>
         const SCALE = 4;
-        const tooltip = document.getElementById('tooltip');
         let draggedItem = null;
         let touchGhost = null;
         let touchOffsetX = 0;
         let touchOffsetY = 0;
         let activeDropzone = null;
-        let uploadTarget = null; // 記錄目前要更換圖片的元件
+        
+        // 用於存放當前被雙擊選中的目標
+        let activeToy = null;
+        let activeShelf = null;
+        let uploadTarget = null;
 
+        // 綁定所有互動事件
         window.rebindAllEvents = function() {
             const toys = document.querySelectorAll('.toy-block');
             toys.forEach(block => {
                 if (block.dataset.bound === 'true') return;
                 block.dataset.bound = 'true';
-
-                // Desktop Tooltip
-                block.addEventListener('mouseenter', (e) => {
-                    if(block.classList.contains('dragging') || window.innerWidth < 768) return;
-                    tooltip.innerHTML = block.getAttribute('data-info');
-                    tooltip.classList.add('visible');
-                    tooltip.style.left = e.clientX + 'px';
-                    tooltip.style.top = e.clientY + 'px';
+                
+                // 雙擊事件 (PC與手機通用自製計時器)
+                block.addEventListener('click', (e) => {
+                    let currentTime = new Date().getTime();
+                    let tapLength = currentTime - (block.dataset.lastClick || 0);
+                    if (tapLength < 350 && tapLength > 0) {
+                        e.preventDefault();
+                        e.stopPropagation(); // 阻止事件傳遞給後方的層板
+                        openToyOptions(block);
+                    }
+                    block.dataset.lastClick = currentTime;
                 });
-                block.addEventListener('mousemove', (e) => {
-                    tooltip.style.left = e.clientX + 'px';
-                    tooltip.style.top = e.clientY + 'px';
-                });
-                block.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
                 
                 // Desktop Drag
                 block.addEventListener('dragstart', (e) => {
                     draggedItem = block;
-                    tooltip.classList.remove('visible');
                     setTimeout(() => block.classList.add('dragging'), 0);
                 });
                 block.addEventListener('dragend', () => {
@@ -316,10 +314,9 @@
                     document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
                 });
 
-                // Touch support
+                // Touch Drag Support
                 block.addEventListener('touchstart', (e) => {
                     if(e.touches.length > 1) return;
-                    if(e.target.closest('.delete-btn') || e.target.closest('.img-btn')) return; // 避免點按鈕觸發拖曳
                     draggedItem = block;
                     const touch = e.touches[0];
                     const rect = block.getBoundingClientRect();
@@ -382,6 +379,22 @@
                 if (dropzone.dataset.bound === 'true') return;
                 dropzone.dataset.bound = 'true';
                 
+                // 層板背景雙擊事件
+                dropzone.addEventListener('click', (e) => {
+                    if (e.target !== dropzone) return; // 確保只點擊到空白處，沒有點到玩具
+                    let currentTime = new Date().getTime();
+                    let tapLength = currentTime - (dropzone.dataset.lastClick || 0);
+                    if (tapLength < 350 && tapLength > 0) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // 暫存區不可刪除或換背景
+                        if(dropzone.id !== 'staging-area') {
+                            openShelfOptions(dropzone.closest('.shelf-container'));
+                        }
+                    }
+                    dropzone.dataset.lastClick = currentTime;
+                });
+
                 dropzone.addEventListener('dragover', (e) => {
                     e.preventDefault(); 
                     dropzone.classList.add('drag-over');
@@ -420,17 +433,72 @@
             dropzone.appendChild(item);
         }
 
-        // --- 圖片上傳功能 ---
-        const uploader = document.getElementById('image-uploader');
-        window.triggerImageUpload = function(event, btn) {
-            event.stopPropagation();
-            if(event.type === 'touchstart') event.preventDefault();
-            const toy = btn.closest('.toy-block');
-            const shelf = btn.closest('.shelf-container');
-            uploadTarget = toy || (shelf ? shelf.querySelector('.dropzone') : null);
-            if (uploadTarget) uploader.click();
-        };
+        // --- 選單 Modal 觸發與功能 ---
+        
+        window.openToyOptions = function(toy) {
+            activeToy = toy;
+            document.getElementById('opt-toy-title').innerText = toy.getAttribute('data-name');
+            document.getElementById('opt-toy-w').innerText = toy.getAttribute('data-w');
+            document.getElementById('opt-toy-h').innerText = toy.getAttribute('data-h');
+            
+            const delBtn = document.getElementById('opt-toy-del-btn');
+            if (activeToy.parentElement === document.getElementById('staging-area')) {
+                delBtn.innerText = "✖ 永久刪除玩具";
+                delBtn.classList.replace('bg-red-600', 'bg-red-800');
+            } else {
+                delBtn.innerText = "✖ 退回暫存區";
+                delBtn.classList.replace('bg-red-800', 'bg-red-600');
+            }
+            openModal('toy-options-modal');
+        }
 
+        window.triggerToyDelete = function() {
+            if(!activeToy) return;
+            const staging = document.getElementById('staging-area');
+            if (activeToy.parentElement === staging) {
+                activeToy.remove();
+            } else {
+                staging.appendChild(activeToy);
+            }
+            closeModal('toy-options-modal');
+            rebindAllEvents();
+        }
+
+        window.triggerToyImageUpload = function() {
+            if(!activeToy) return;
+            uploadTarget = activeToy;
+            document.getElementById('image-uploader').click();
+            closeModal('toy-options-modal');
+        }
+
+        window.openShelfOptions = function(shelf) {
+            activeShelf = shelf;
+            const dropzone = shelf.querySelector('.dropzone');
+            document.getElementById('opt-shelf-title').innerText = dropzone.getAttribute('data-name');
+            document.getElementById('opt-shelf-h').innerText = dropzone.getAttribute('data-max-h');
+            openModal('shelf-options-modal');
+        }
+
+        window.triggerShelfDelete = function() {
+            if(!activeShelf) return;
+            if(!confirm("確定要刪除此層板嗎？裡面的玩具會退回暫存區。")) return;
+            const dropzone = activeShelf.querySelector('.dropzone');
+            const staging = document.getElementById('staging-area');
+            const toys = dropzone.querySelectorAll('.toy-block');
+            toys.forEach(toy => staging.appendChild(toy));
+            activeShelf.remove();
+            closeModal('shelf-options-modal');
+        }
+
+        window.triggerShelfImageUpload = function() {
+            if(!activeShelf) return;
+            uploadTarget = activeShelf.querySelector('.dropzone');
+            document.getElementById('image-uploader').click();
+            closeModal('shelf-options-modal');
+        }
+
+        // --- 圖片上傳處理 ---
+        const uploader = document.getElementById('image-uploader');
         uploader.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file || !uploadTarget) return;
@@ -445,13 +513,14 @@
                     const textSpan = uploadTarget.querySelector('.text-content');
                     if (textSpan) textSpan.style.opacity = '0'; // 隱藏文字
                     uploadTarget.style.backgroundColor = 'transparent';
-                    uploadTarget.style.boxShadow = 'none'; // 取消內陰影讓圖更好看
+                    uploadTarget.style.boxShadow = 'none'; // 取消內陰影
                 }
             };
             reader.readAsDataURL(file);
             e.target.value = '';
         });
 
+        // --- 櫃體與層板建立 ---
         let isResizing = false;
         let resizeTarget = null;
         let startY = 0;
@@ -477,14 +546,12 @@
             if (!isResizing) return;
             e.preventDefault();
             const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            const deltaY = startY - clientY; // 往上拖 delta 為正
+            const deltaY = startY - clientY; 
             let newHeightPx = startHeight + deltaY;
             
             const dropzone = resizeTarget.querySelector('.dropzone');
-            
-            // 找出該層最高的玩具作為高度底線
             const toys = Array.from(dropzone.querySelectorAll('.toy-block'));
-            let maxToyH = 10; // 最小 10cm
+            let maxToyH = 10; 
             toys.forEach(t => {
                 const th = parseFloat(t.getAttribute('data-h'));
                 if (th > maxToyH) maxToyH = th;
@@ -516,28 +583,6 @@
             document.removeEventListener('touchmove', doResize);
             document.removeEventListener('touchend', stopResize);
         }
-
-        window.deleteToy = function(event, btn) {
-            event.stopPropagation();
-            if(event.type === 'touchstart') event.preventDefault();
-            const toy = btn.closest('.toy-block');
-            const staging = document.getElementById('staging-area');
-            if (toy.parentElement === staging) {
-                toy.remove();
-            } else {
-                staging.appendChild(toy);
-            }
-            rebindAllEvents();
-        };
-
-        window.deleteShelf = function(btn) {
-            const shelf = btn.closest('.shelf-container');
-            const dropzone = shelf.querySelector('.dropzone');
-            const staging = document.getElementById('staging-area');
-            const toys = dropzone.querySelectorAll('.toy-block');
-            toys.forEach(toy => staging.appendChild(toy));
-            shelf.remove();
-        };
 
         window.deleteCabinet = function(btn) {
             if(!confirm("確定要刪除整個櫃體嗎？裡面的玩具會退回暫存區。")) return;
@@ -586,8 +631,6 @@
                 <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
                     <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
                     <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
-                    <button onclick="triggerImageUpload(event, this)" class="shelf-action-btn absolute right-[45px] -top-[18px] text-blue-400 hover:text-blue-300 text-[10px] z-20 px-1">🖼️ 背景</button>
-                    <button onclick="deleteShelf(this)" class="shelf-action-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-20 px-1">✖ 刪除</button>
                     <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
                 </div>`;
             const wrapper = document.createElement('div');
@@ -612,18 +655,14 @@
             toy.setAttribute('data-name', name);
             toy.setAttribute('data-w', w);
             toy.setAttribute('data-h', h);
-            toy.setAttribute('data-info', `<div class="text-left"><b class="text-amber-400 text-base">${name}</b><br><span class="text-gray-300">面寬: <b class="text-white">${w}</b> cm<br>高度: <b class="text-white">${h}</b> cm</span></div>`);
-            toy.innerHTML = `
-                <span class="text-content truncate px-1 pointer-events-none">${name}</span>
-                <div class="img-btn" ontouchstart="triggerImageUpload(event, this)" onclick="triggerImageUpload(event, this)">🖼️</div>
-                <div class="delete-btn" ontouchstart="deleteToy(event, this)" onclick="deleteToy(event, this)">✖</div>`;
+            toy.innerHTML = `<span class="text-content truncate px-1 pointer-events-none">${name}</span>`;
 
             document.getElementById('staging-area').appendChild(toy);
             rebindAllEvents();
             closeModal('add-toy-modal');
         };
 
-        // Modal Helpers & Export
+        // --- UI Modal Helpers ---
         window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
         window.closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
         window.showErrorModal = (msg) => { document.getElementById('error-message').innerHTML = msg; openModal('error-modal'); };
@@ -678,17 +717,17 @@
                 return document.getElementById(id);
             }
 
+            // 修改插入順序：改為 appendChild 讓底層先入，視覺上會在下方，後續往上疊
             function buildShelf(cabEl, name, w, h) {
                 const shelfHtml = `
                     <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
                         <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
                         <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
-                        <button onclick="triggerImageUpload(event, this)" class="shelf-action-btn absolute right-[45px] -top-[18px] text-blue-400 hover:text-blue-300 text-[10px] z-20 px-1">🖼️ 背景</button>
-                        <button onclick="deleteShelf(this)" class="shelf-action-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-20 px-1">✖ 刪除</button>
                         <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
                     </div>`;
                 const wrapper = document.createElement('div');
                 wrapper.innerHTML = shelfHtml.trim();
+                // 使用 prepend 讓後建的層板疊在上方
                 cabEl.querySelector('.shelf-list').prepend(wrapper.firstChild); 
                 return cabEl.querySelector('.shelf-container:first-child .dropzone');
             }
@@ -697,11 +736,8 @@
                 const toyHtml = `
                     <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] md:text-xs overflow-hidden shadow-md leading-none text-center select-none"
                          style="width: ${w * SCALE}px; height: ${h * SCALE}px; background-color: ${color};"
-                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" 
-                         data-info="<div class='text-left'><b class='text-amber-400 text-base'>${name}</b><br><span class='text-gray-300'>面寬: <b class='text-white'>${w}</b> cm<br>高度: <b class='text-white'>${h}</b> cm</span></div>">
+                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}">
                         <span class="text-content truncate px-1 pointer-events-none">${name}</span>
-                        <div class="img-btn" ontouchstart="triggerImageUpload(event, this)" onclick="triggerImageUpload(event, this)">🖼️</div>
-                        <div class="delete-btn" ontouchstart="deleteToy(event, this)" onclick="deleteToy(event, this)">✖</div>
                     </div>`;
                 const wrapper = document.createElement('div');
                 wrapper.innerHTML = toyHtml.trim();
@@ -716,7 +752,7 @@
             const cabM = buildCabinet('cab_M', '中區 (深度21-24)', 70);
             const cabR = buildCabinet('cab_R', '右區 (深度21-24)', 70);
 
-            // ================== 左區 (由下往上建) ==================
+            // ================== 左區 ==================
             const L0 = buildShelf(cabL, '底層', 70, 65);
             injectToy(L0, '巴斯存錢筒', 33, 41, C_Pixar);
             injectToy(L0, '佐格', 25, 40, C_Pixar);
@@ -750,7 +786,7 @@
 
             buildShelf(cabL, '頂層擴充區', 70, 40);
 
-            // ================== 中區 (由下往上建) ==================
+            // ================== 中區 ==================
             const M0 = buildShelf(cabM, '底層', 70, 65);
             injectToy(M0, 'THE JOKER', 39, 50, C_Weird);
             injectToy(M0, '魔多戒靈', 23.5, 46, C_LOTR);
@@ -784,7 +820,7 @@
 
             buildShelf(cabM, '頂層擴充區', 70, 40);
 
-            // ================== 右區 (由下往上建) ==================
+            // ================== 右區 ==================
             const R0 = buildShelf(cabR, '底層', 70, 65);
             injectToy(R0, 'JARETH', 30.5, 57.5, C_Weird);
             injectToy(R0, '巴斯殼', 20, 39, C_Pixar);
