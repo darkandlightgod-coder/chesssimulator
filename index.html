@@ -8,7 +8,6 @@
     <style>
         :root {
             --scale: 4px; /* 1cm = 4px */
-            --shelf-width: 280px; /* 70cm * 4 */
         }
         
         body {
@@ -16,7 +15,6 @@
             color: #e0e0e0;
             font-family: 'Inter', 'Microsoft JhengHei', sans-serif;
             margin: 0;
-            overflow-x: auto;
         }
 
         /* 標尺網格背景：每 20px (即實體 5cm) 畫一條線 */
@@ -30,17 +28,17 @@
         }
 
         /* 拖曳目標區的高光效果 */
-        .shelf-bg.drag-over {
+        .shelf-bg.drag-over, .staging-bg.drag-over {
             background-color: rgba(245, 158, 11, 0.15); /* Amber tint */
             box-shadow: inset 0 0 15px rgba(245, 158, 11, 0.5);
         }
 
-        /* 玩具方塊樣式與過渡效果 */
+        /* 玩具方塊樣式 */
         .toy-block {
             transition: transform 0.1s ease-in-out, filter 0.2s;
             cursor: grab;
             box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
-            flex-shrink: 0; /* 防止空間不足時被擠壓變形 */
+            flex-shrink: 0; 
         }
         
         .toy-block:hover {
@@ -50,10 +48,7 @@
             z-index: 10;
         }
 
-        /* 拖曳中的狀態 */
-        .toy-block:active {
-            cursor: grabbing;
-        }
+        .toy-block:active { cursor: grabbing; }
         .toy-block.dragging {
             opacity: 0.6;
             transform: scale(0.95);
@@ -68,7 +63,6 @@
             transition: opacity 0.15s ease, transform 0.1s ease;
             transform: translate(-50%, -10px);
         }
-        
         #tooltip.visible {
             opacity: 1;
             transform: translate(-50%, -40px);
@@ -77,576 +71,309 @@
         /* 自訂捲軸 */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #1a1a1a; }
-        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #666; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #777; }
     </style>
 </head>
-<body class="min-h-screen p-4 md:p-8 flex flex-col items-center pb-20">
+<body class="flex h-screen w-full overflow-hidden">
 
-    <!-- 標題與說明區 -->
-    <div class="text-center mb-8 max-w-3xl">
-        <h1 class="text-3xl font-bold text-amber-500 mb-3 tracking-wide">系統櫃立面配置 <span class="text-white text-2xl">絕對比例驗證沙盤</span></h1>
-        <p class="text-gray-400 text-sm md:text-base leading-relaxed">
-            採用 <strong class="text-amber-400">1 公分 = 4 像素</strong> 精確縮放。<br>
-            <span class="inline-block mt-2 px-3 py-1 bg-gray-800 rounded-full border border-gray-700 text-amber-300 animate-pulse">✨ 全新功能：您可以按住滑鼠「拖曳」任何玩具到其他格子中！系統會自動驗證空間是否足夠。</span><br>
-            <span class="text-emerald-400 mt-2 block">將游標停留在色塊上可查看詳細尺寸。</span>
-        </p>
-
-        <div class="mt-6 flex flex-wrap justify-center gap-4">
-            <button onclick="openAddToyModal()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                新增專屬玩具
-            </button>
-            <button id="save-btn" onclick="saveLayout()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-                儲存當前配置
-            </button>
-        </div>
-    </div>
-
-    <!-- 暫存庫存區 (無限制大小) -->
-    <div class="w-full max-w-7xl bg-[#2a221c] border-2 border-dashed border-[#5e412f] rounded-xl p-4 mb-8 shadow-inner">
-        <h3 class="text-amber-500/80 font-bold text-sm tracking-widest mb-3">📥 暫存庫存區 (無尺寸限制，新建立或取下的玩具請放此)</h3>
-        <div id="staging-area" class="dropzone flex flex-wrap gap-3 min-h-[100px] items-end p-3 bg-black/30 rounded-lg" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999">
-            <!-- 新增的玩具會先產生在這裡 -->
-        </div>
-    </div>
-
-    <!-- 系統櫃本體容器 -->
-    <div class="flex gap-6 p-6 bg-[#1a1511] rounded-xl shadow-2xl border-4 border-[#3d2b1f] relative overflow-x-auto max-w-full">
+    <!-- =================== 左側面板 (固定區) =================== -->
+    <div class="w-80 md:w-96 flex-shrink-0 bg-[#1e1814] border-r-4 border-[#3d2b1f] flex flex-col h-full z-20 shadow-[5px_0_15px_rgba(0,0,0,0.5)]">
         
-        <!-- =================== 左區 (Left Column) =================== -->
-        <div class="flex flex-col gap-2">
-            <!-- 區塊標題 -->
-            <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner">
-                <h2 class="text-lg font-bold text-gray-200 tracking-widest">【 左 區 】</h2>
-                <p class="text-xs text-amber-500 font-medium mt-1">內徑總寬 70cm × 總高 280cm</p>
-                <p class="text-[10px] text-gray-500">下半深24cm / 上半深21cm</p>
-            </div>
-            
-            <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl">
-                <!-- 頂層擴充區 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 160px;" data-name="左區 頂層擴充區" data-max-w="70" data-max-h="40">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">頂層擴充區 (高40)</span>
-                </div>
-                
-                <!-- 第五層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 80px;" data-name="左區 第5層" data-max-w="70" data-max-h="20">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層 (高20/深21)</span>
-                    <div class="toy-block draggable bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center" 
-                         style="width: 84px; height: 30.8px;" draggable="true" data-name="龍貓" data-w="21" data-h="7.7" data-info="龍貓<br>寬: 21 cm / 高: 7.7 cm">龍貓</div>
-                    <div class="toy-block draggable bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center" 
-                         style="width: 84px; height: 30.8px;" draggable="true" data-name="小千" data-w="21" data-h="7.7" data-info="小千<br>寬: 21 cm / 高: 7.7 cm">小千</div>
-                </div>
+        <!-- 標題與按鈕區 -->
+        <div class="p-5 border-b border-[#3d2b1f] bg-[#16120f]">
+            <h1 class="text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-lg">絕對比例驗證沙盤</span></h1>
+            <p class="text-gray-400 text-xs mb-4 leading-relaxed">
+                <strong class="text-amber-400">1 公分 = 4 像素</strong><br>
+                在右側無限畫布中排版，將游標停留在色塊上可查看尺寸，若超過限制將無法放入。
+            </p>
 
-                <!-- 第四層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 100px;" data-name="左區 第4層" data-max-w="70" data-max-h="25">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層 (高25/深21)</span>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 28px; height: 58.8px;" draggable="true" data-name="ELEVEN" data-w="7" data-h="14.7" data-info="ELEVEN<br>寬: 7 cm / 高: 14.7 cm">EL</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30px; height: 72px;" draggable="true" data-name="HELLFIRE EDDIE" data-w="7.5" data-h="18" data-info="HELLFIRE EDDIE<br>寬: 7.5 cm / 高: 18 cm">HE</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 28.4px; height: 56.8px;" draggable="true" data-name="DUSTIN" data-w="7.1" data-h="14.2" data-info="DUSTIN<br>寬: 7.1 cm / 高: 14.2 cm">DU</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 42px; height: 62.4px;" draggable="true" data-name="ROCKSTAR EDDIE" data-w="10.5" data-h="15.6" data-info="ROCKSTAR EDDIE<br>寬: 10.5 cm / 高: 15.6 cm">RO</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 34px; height: 66.4px;" draggable="true" data-name="VECNA" data-w="8.5" data-h="16.6" data-info="VECNA<br>寬: 8.5 cm / 高: 16.6 cm">VE</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 43.6px; height: 66.4px;" draggable="true" data-name="DEMOGORGON 1" data-w="10.9" data-h="16.6" data-info="DEMOGORGON 1<br>寬: 10.9 cm / 高: 16.6 cm">DE</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 43.6px; height: 66.4px;" draggable="true" data-name="DEMOGORGON 2" data-w="10.9" data-h="16.6" data-info="DEMOGORGON 2<br>寬: 10.9 cm / 高: 16.6 cm">DE</div>
-                </div>
-
-                <!-- 第三層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="左區 第3層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層 (高35/深24)</span>
-                    <div class="toy-block draggable bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 92px; height: 112px;" draggable="true" data-name="巴斯電子" data-w="23" data-h="28" data-info="巴斯電子<br>寬: 23 cm / 高: 28 cm">巴斯電子</div>
-                    <div class="toy-block draggable bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 76px; height: 104px;" draggable="true" data-name="巴斯一番賞" data-w="19" data-h="26" data-info="巴斯一番賞<br>寬: 19 cm / 高: 26 cm">巴斯一番</div>
-                </div>
-
-                <!-- 第二層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="左區 第2層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層 (高35/深24)</span>
-                    <div class="toy-block draggable bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 42px; height: 104px;" draggable="true" data-name="出包 闇兔女郎" data-w="10.5" data-h="26" data-info="出包 闇兔女郎<br>寬: 10.5 cm / 高: 26 cm">兔女</div>
-                    <div class="toy-block draggable bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 88px;" draggable="true" data-name="出包 闇牛仔褲" data-w="9.5" data-h="22" data-info="出包 闇牛仔褲<br>寬: 9.5 cm / 高: 22 cm">牛仔</div>
-                    <div class="toy-block draggable bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 96px;" draggable="true" data-name="出包 桃子泳裝" data-w="10" data-h="24" data-info="出包 桃子泳裝<br>寬: 10 cm / 高: 24 cm">桃子</div>
-                </div>
-
-                <!-- 第一層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="左區 第1層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層 (高35/深24)</span>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 80px; height: 112px;" draggable="true" data-name="ARAGORN" data-w="20" data-h="28" data-info="ARAGORN<br>寬: 20 cm / 高: 28 cm">ARAGORN</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 89.2px; height: 100.8px;" draggable="true" data-name="LURTZ" data-w="22.3" data-h="25.2" data-info="LURTZ<br>寬: 22.3 cm / 高: 25.2 cm">LURTZ</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 46px; height: 60px;" draggable="true" data-name="RINGWRAITH (小)" data-w="11.5" data-h="15" data-info="RINGWRAITH (小)<br>寬: 11.5 cm / 高: 15 cm">小戒靈</div>
-                </div>
-
-                <!-- 底層 -->
-                <div class="shelf-bg dropzone relative flex items-end border-b-[16px] border-[#3d2b1f]" 
-                     style="width: 280px; height: 260px;" data-name="左區 底層" data-max-w="70" data-max-h="65">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層落地 (高65/無限制)</span>
-                    <div class="toy-block draggable bg-sky-700/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 132px; height: 164px;" draggable="true" data-name="超大巴斯存錢筒" data-w="33" data-h="41" data-info="超大巴斯存錢筒<br>寬: 33 cm / 高: 41 cm">
-                        <span>超大巴斯</span><span>存錢筒</span>
-                    </div>
-                    <div class="toy-block draggable bg-sky-700/80 text-white text-[12px] font-bold flex items-center justify-center" style="width: 100px; height: 160px;" draggable="true" data-name="佐格" data-w="25" data-h="40" data-info="佐格 (Zurg)<br>寬: 25 cm / 高: 40 cm">佐格</div>
-                </div>
+            <div class="flex flex-col gap-3">
+                <button onclick="openAddToyModal()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    新增玩具元件
+                </button>
+                <button onclick="openExportModal()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    匯出配置存檔 (HTML)
+                </button>
             </div>
         </div>
 
-        <!-- =================== 中區 (Middle Column) =================== -->
-        <div class="flex flex-col gap-2">
-            <!-- 區塊標題 -->
-            <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner">
-                <h2 class="text-lg font-bold text-gray-200 tracking-widest">【 中 區 】</h2>
-                <p class="text-xs text-amber-500 font-medium mt-1">內徑總寬 70cm × 總高 280cm</p>
-                <p class="text-[10px] text-gray-500">下半深24cm / 上半深21cm</p>
-            </div>
-            
-            <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl">
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 160px;" data-name="中區 頂層擴充區" data-max-w="70" data-max-h="40"></div>
-                
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 80px;" data-name="中區 第5層" data-max-w="70" data-max-h="20">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層</span>
-                    <div class="toy-block draggable bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 30.4px; height: 60.8px;" draggable="true" data-name="Pickle Rick" data-w="7.6" data-h="15.2" data-info="Pickle Rick<br>寬: 7.6 cm / 高: 15.2 cm">Pi</div>
-                    <div class="toy-block draggable bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 25.6px; height: 38px;" draggable="true" data-name="Pickle Rick small" data-w="6.4" data-h="9.5" data-info="Pickle Rick small<br>寬: 6.4 cm / 高: 9.5 cm">p.s</div>
-                    <div class="toy-block draggable bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 40px; height: 64px;" draggable="true" data-name="超人與狗" data-w="10" data-h="16" data-info="超人與狗<br>寬: 10 cm / 高: 16 cm">超人</div>
-                    <div class="toy-block draggable bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 30px; height: 44px;" draggable="true" data-name="ELLO WORM" data-w="7.5" data-h="11" data-info="ELLO WORM<br>寬: 7.5 cm / 高: 11 cm">EL</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 100px;" data-name="中區 第4層" data-max-w="70" data-max-h="25">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層</span>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 32px; height: 65.6px;" draggable="true" data-name="SLIMER" data-w="8" data-h="16.4" data-info="SLIMER<br>寬: 8 cm / 高: 16.4 cm">SL</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 36.4px; height: 68.8px;" draggable="true" data-name="SLIMED VENKMAN" data-w="9.1" data-h="17.2" data-info="SLIMED VENKMAN<br>寬: 9.1 cm / 高: 17.2 cm">SV</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 42px; height: 70.4px;" draggable="true" data-name="EGON SPENGLER" data-w="10.5" data-h="17.6" data-info="EGON SPENGLER<br>寬: 10.5 cm / 高: 17.6 cm">EG</div>
-                    <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 54px; height: 60px;" draggable="true" data-name="FACEHUGGER" data-w="13.5" data-h="15" data-info="FACEHUGGER<br>寬: 13.5 cm / 高: 15 cm">FACE</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="中區 第3層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層</span>
-                    <div class="toy-block draggable bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 96px; height: 104px;" draggable="true" data-name="綠惡魔樂高" data-w="24" data-h="26" data-info="綠惡魔樂高<br>寬: 24 cm / 高: 26 cm">綠惡魔</div>
-                    <div class="toy-block draggable bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 64px; height: 68px;" draggable="true" data-name="蜘蛛人樂高(側放)" data-w="16" data-h="17" data-info="蜘蛛人樂高 (側放)<br>面寬留: 16 cm / 高: 17 cm">蜘蛛側</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="中區 第2層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層</span>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 88px; height: 88px;" draggable="true" data-name="初音NT" data-w="22" data-h="22" data-info="初音NT<br>寬: 22 cm / 高: 22 cm">初音NT</div>
-                    <div class="toy-block draggable bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 96px;" draggable="true" data-name="涼宮春日兔女郎" data-w="9.5" data-h="24" data-info="涼宮春日 兔女郎<br>寬: 9.5 cm / 高: 24 cm">涼宮</div>
-                    <div class="toy-block draggable bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 76px;" draggable="true" data-name="白雪公主" data-w="9.5" data-h="19" data-info="白雪公主<br>寬: 9.5 cm / 高: 19 cm">白雪</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="中區 第1層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層</span>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 91.2px; height: 102.8px;" draggable="true" data-name="SARUMAN大" data-w="22.8" data-h="25.7" data-info="SARUMAN M THE WHITE<br>寬: 22.8 cm / 高: 25.7 cm">大SARUMAN</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 60px; height: 100px;" draggable="true" data-name="烙印手" data-w="15" data-h="25" data-info="Berserk hand of god<br>寬: 15 cm / 高: 25 cm">烙印手</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 48px; height: 80px;" draggable="true" data-name="骷髏" data-w="12" data-h="20" data-info="Berserk skull<br>寬: 12 cm / 高: 20 cm">骷髏</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center leading-tight text-center" style="width: 58.4px; height: 101.6px;" draggable="true" data-name="巴風特" data-w="14.6" data-h="25.4" data-info="Baphomet statue<br>寬: 14.6 cm / 高: 25.4 cm">巴風特</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[16px] border-[#3d2b1f]" 
-                     style="width: 280px; height: 260px;" data-name="中區 底層" data-max-w="70" data-max-h="65">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層</span>
-                    <div class="toy-block draggable bg-red-600/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 156px; height: 200px;" draggable="true" data-name="THE JOKER" data-w="39" data-h="50" data-info="THE JOKER<br>寬: 39 cm / 高: 50 cm">
-                        <span class="text-lg">THE JOKER</span>
-                        <span class="text-xs opacity-75">(39 x 50)</span>
-                    </div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[12px] font-bold flex items-center justify-center text-center" style="width: 94px; height: 184px;" draggable="true" data-name="魔多戒靈" data-w="23.5" data-h="46" data-info="RINGWRAITH OF MORDOR<br>寬: 23.5 cm / 高: 46 cm">魔多<br>戒靈</div>
-                </div>
+        <!-- 暫存區 (可捲動) -->
+        <div class="flex-1 p-4 overflow-y-auto flex flex-col">
+            <h3 class="text-amber-500/80 font-bold text-xs tracking-widest mb-3 flex items-center gap-2">
+                📥 暫存庫存區 <span class="text-[10px] text-gray-500">(無尺寸限制)</span>
+            </h3>
+            <div id="staging-area" class="dropzone staging-bg flex-1 flex flex-wrap gap-2 content-start p-3 bg-[#110d0a] border-2 border-dashed border-[#4a3424] rounded-lg min-h-[200px]" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999">
+                <!-- 新增或移除的玩具會自動回到這裡 -->
             </div>
         </div>
+    </div>
 
-        <!-- =================== 右區 (Right Column) =================== -->
-        <div class="flex flex-col gap-2">
-            <!-- 區塊標題 -->
-            <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner">
-                <h2 class="text-lg font-bold text-gray-200 tracking-widest">【 右 區 】</h2>
-                <p class="text-xs text-amber-500 font-medium mt-1">內徑總寬 70cm × 總高 280cm</p>
-                <p class="text-[10px] text-gray-500">下半深24cm / 上半深21cm</p>
-            </div>
+    <!-- =================== 右側畫布 (櫃體與層板工作區) =================== -->
+    <div class="flex-1 bg-[#121212] overflow-x-auto overflow-y-auto relative p-8">
+        
+        <!-- 畫布容器 -->
+        <div id="cabinet-canvas" class="flex gap-8 items-end min-w-max pb-20 pt-10">
             
-            <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl">
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 160px;" data-name="右區 頂層擴充區" data-max-w="70" data-max-h="40"></div>
+            <!-- 初始左區櫃體 -->
+            <div class="cabinet-col group flex flex-col gap-2" data-w="70">
+                <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative">
+                    <button onclick="deleteCabinet(this)" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="刪除整個櫃體">✖</button>
+                    <h2 class="text-lg font-bold text-gray-200 tracking-widest cabinet-name">【 左 區 】</h2>
+                    <p class="text-xs text-amber-500 font-medium mt-1">內徑寬 70cm</p>
+                    <button onclick="openAddShelfModal(this)" class="mt-2 text-[10px] bg-amber-700/50 hover:bg-amber-600 text-white px-2 py-1 rounded transition-colors w-full border border-amber-600/50">+ 新增層板</button>
+                </div>
                 
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 80px;" data-name="右區 第5層" data-max-w="70" data-max-h="20">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層</span>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 56px; height: 56px;" draggable="true" data-name="開司" data-w="14" data-h="14" data-info="開司<br>寬: 14 cm / 高: 14 cm">開司</div>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 40px; height: 52px;" draggable="true" data-name="黑魔導女孩" data-w="10" data-h="13" data-info="黑魔導女孩<br>寬: 10 cm / 高: 13 cm">黑魔</div>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 32px; height: 56px;" draggable="true" data-name="賽車小公主" data-w="8" data-h="14" data-info="賽車小公主<br>寬: 8 cm / 高: 14 cm">賽車</div>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 52px; height: 48px;" draggable="true" data-name="信長" data-w="13" data-h="12" data-info="信長<br>寬: 13 cm / 高: 12 cm">信長</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 100px;" data-name="右區 第4層" data-max-w="70" data-max-h="25">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層</span>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 44px; height: 75.6px;" draggable="true" data-name="SARUMAN THE WHITE" data-w="11" data-h="18.9" data-info="SARUMAN THE WHITE<br>寬: 11 cm / 高: 18.9 cm">SA</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 38px; height: 74px;" draggable="true" data-name="BOROMIR" data-w="9.5" data-h="18.5" data-info="BOROMIR<br>寬: 9.5 cm / 高: 18.5 cm">BO</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 36px; height: 32px;" draggable="true" data-name="GOLLUM" data-w="9" data-h="8" data-info="GOLLUM<br>寬: 9 cm / 高: 8 cm">GO</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30.4px; height: 58.8px;" draggable="true" data-name="SARAH AND THE WORM" data-w="7.6" data-h="14.7" data-info="SARAH AND THE WORM<br>寬: 7.6 cm / 高: 14.7 cm">SR</div>
-                    <div class="toy-block draggable bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 34px; height: 48px;" draggable="true" data-name="ALITA DOLL" data-w="8.5" data-h="12" data-info="ALITA DOLL<br>寬: 8.5 cm / 高: 12 cm">AL</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="右區 第3層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層</span>
-                    <div class="toy-block draggable bg-emerald-700/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 76.2px; height: 88.9px;" draggable="true" data-name="黑魔女" data-w="19.05" data-h="22.2" data-info="Maleficent (黑魔女)<br>寬: 19.05 cm / 高: 22.2 cm">黑魔女</div>
-                    <div class="toy-block draggable bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 92px;" draggable="true" data-name="苦力怕樂高" data-w="10" data-h="23" data-info="苦力怕樂高<br>寬: 10 cm / 高: 23 cm">苦力怕</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="右區 第2層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層</span>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 100px;" draggable="true" data-name="Gantz reika" data-w="10" data-h="25" data-info="Gantz reika<br>寬: 10 cm / 高: 25 cm">Gantz</div>
-                    <div class="toy-block draggable bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center text-center" style="width: 56px; height: 96px;" draggable="true" data-name="狼與辛香料" data-w="14" data-h="24" data-info="狼與辛香料<br>寬: 14 cm / 高: 24 cm">狼與<br>香料</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f]" 
-                     style="width: 280px; height: 140px;" data-name="右區 第1層" data-max-w="70" data-max-h="35">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層</span>
-                    <div class="toy-block draggable bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center text-center leading-tight" style="width: 50.8px; height: 111.6px;" draggable="true" data-name="戴歐尼修斯" data-w="12.7" data-h="27.9" data-info="Greek Diǒnûsos<br>寬: 12.7 cm / 高: 27.9 cm">戴歐<br>尼修斯</div>
-                    <div class="toy-block draggable bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center text-center leading-tight" style="width: 35.6px; height: 60.8px;" draggable="true" data-name="阿芙蘿黛蒂" data-w="8.9" data-h="15.2" data-info="Greek Aphrodite<br>寬: 8.9 cm / 高: 15.2 cm">阿芙<br>蘿黛</div>
-                </div>
-
-                <div class="shelf-bg dropzone relative flex items-end border-b-[16px] border-[#3d2b1f]" 
-                     style="width: 280px; height: 260px;" data-name="右區 底層" data-max-w="70" data-max-h="65">
-                    <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層</span>
-                    <div class="toy-block draggable bg-red-600/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 122px; height: 230px;" draggable="true" data-name="JARETH" data-w="30.5" data-h="57.5" data-info="JARETH AND SARAH...<br>寬: 30.5 cm / 高: 57.5 cm">
-                        <span class="text-sm">JARETH</span>
-                        <span class="text-xs opacity-75">(30.5 x 57.5)</span>
+                <div class="shelf-container flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl border-b-[16px] border-b-[#3d2b1f] justify-end">
+                    <!-- 第2層 -->
+                    <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f] group/shelf" 
+                         style="width: 280px; height: 140px;" data-name="左區-層板A" data-max-w="70" data-max-h="35">
+                        <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">高35 (示範)</span>
+                        <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
+                        <div class="toy-block draggable bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 84px; height: 30.8px;" draggable="true" data-name="龍貓" data-w="21" data-h="7.7" data-info="龍貓<br>寬: 21 cm / 高: 7.7 cm">龍貓</div>
+                        <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30px; height: 72px;" draggable="true" data-name="HELLFIRE EDDIE" data-w="7.5" data-h="18" data-info="HELLFIRE EDDIE<br>寬: 7.5 cm / 高: 18 cm">HE</div>
                     </div>
-                    <div class="toy-block draggable bg-sky-700/80 text-white text-[12px] font-bold flex items-center justify-center text-center" style="width: 80px; height: 156px;" draggable="true" data-name="巴斯光年純殼" data-w="20" data-h="39" data-info="巴斯光年純殼<br>寬: 20 cm / 高: 39 cm">巴斯<br>純殼</div>
+                    <!-- 底層 -->
+                    <div class="shelf-bg dropzone relative flex items-end group/shelf" 
+                         style="width: 280px; height: 260px;" data-name="左區-底層落地" data-max-w="70" data-max-h="65">
+                        <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">落地 高65 (示範)</span>
+                        <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
+                        <div class="toy-block draggable bg-sky-700/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 132px; height: 164px;" draggable="true" data-name="超大巴斯存錢筒" data-w="33" data-h="41" data-info="超大巴斯存錢筒<br>寬: 33 cm / 高: 41 cm">
+                            <span>超大巴斯</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
+            <!-- 新增櫃體大按鈕 -->
+            <div class="flex items-center h-full pb-4">
+                <button onclick="openAddCabinetModal()" class="w-16 h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
+                    <svg class="w-8 h-8 mb-2 transform group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    <span class="text-xs font-bold writing-vertical-rl align-middle tracking-widest" style="writing-mode: vertical-rl;">新增櫃體</span>
+                </button>
+            </div>
+
+        </div>
     </div>
 
     <!-- 懸停提示框 DOM 元件 -->
     <div id="tooltip" class="fixed z-[100] bg-gray-900 text-white border border-amber-500/50 rounded shadow-xl px-4 py-2 text-sm text-center"></div>
 
-    <!-- 新增玩具彈出視窗 (Modal) -->
+    <!-- 系統訊息通知 (Toast) -->
+    <div id="toast-msg" class="fixed bottom-5 right-5 z-[1000] text-white px-6 py-3 rounded-lg shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none hidden">成功！</div>
+
+    <!-- 錯誤提示彈出視窗 (Modal) -->
+    <div id="error-modal" class="fixed inset-0 z-[999] bg-black/70 hidden items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 class="text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
+            <p id="error-message" class="text-gray-300 text-center mb-6 leading-relaxed"></p>
+            <button onclick="closeErrorModal()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">我知道了</button>
+        </div>
+    </div>
+
+    <!-- 新增玩具 Modal -->
     <div id="add-toy-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm">
         <div class="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <h3 class="text-xl font-bold text-amber-500 mb-4">✨ 新增專屬玩具</h3>
+            <h3 class="text-xl font-bold text-amber-500 mb-4">✨ 新增玩具元件</h3>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-gray-300 text-sm font-bold mb-1">玩具名稱</label>
-                    <input type="text" id="new-toy-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="例如: 巨大哥吉拉">
+                    <label class="block text-gray-300 text-sm font-bold mb-1">名稱</label>
+                    <input type="text" id="new-toy-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2" placeholder="例如: 哥吉拉">
                 </div>
                 <div class="flex gap-4">
                     <div class="w-1/2">
                         <label class="block text-gray-300 text-sm font-bold mb-1">面寬 (cm)</label>
-                        <input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="10">
+                        <input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2" placeholder="10">
                     </div>
                     <div class="w-1/2">
                         <label class="block text-gray-300 text-sm font-bold mb-1">高度 (cm)</label>
-                        <input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="20">
+                        <input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2" placeholder="20">
                     </div>
                 </div>
                 <div>
-                    <label class="block text-gray-300 text-sm font-bold mb-1">顯示顏色</label>
-                    <input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#10b981">
+                    <label class="block text-gray-300 text-sm font-bold mb-1">代表顏色</label>
+                    <input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#b91c1c">
                 </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
-                <button onclick="closeAddToyModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors">取消</button>
-                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded transition-colors">確認新增</button>
+                <button onclick="closeAddToyModal()" class="px-4 py-2 bg-gray-700 text-white rounded">取消</button>
+                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 text-white font-bold rounded">加入暫存區</button>
             </div>
         </div>
     </div>
 
-    <!-- 系統訊息通知 (Toast) -->
-    <div id="toast-msg" class="fixed bottom-5 right-5 z-[1000] text-white px-6 py-3 rounded-lg shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none hidden">
-        成功！
-    </div>
-
-    <!-- 錯誤提示彈出視窗 (Modal) -->
-    <div id="error-modal" class="fixed inset-0 z-[999] bg-black/60 hidden items-center justify-center backdrop-blur-sm">
-        <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl transform scale-100 transition-all">
-            <div class="flex items-center justify-center mb-4">
-                <div class="bg-red-500/20 p-3 rounded-full">
-                    <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+    <!-- 新增櫃體 Modal -->
+    <div id="add-cabinet-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 class="text-xl font-bold text-amber-500 mb-4">🗄️ 新增整座櫃體</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">櫃體名稱 (例如: 右區)</label>
+                    <input type="text" id="new-cab-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">內徑總寬度 (cm)</label>
+                    <input type="number" id="new-cab-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2" value="70">
                 </div>
             </div>
-            <h3 class="text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
-            <p id="error-message" class="text-gray-300 text-center mb-6 leading-relaxed"></p>
-            <button onclick="closeErrorModal()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                我知道了
-            </button>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeModal('add-cabinet-modal')" class="px-4 py-2 bg-gray-700 text-white rounded">取消</button>
+                <button onclick="createNewCabinet()" class="px-4 py-2 bg-amber-600 text-white font-bold rounded">建立櫃體</button>
+            </div>
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- 新增層板 Modal -->
+    <div id="add-shelf-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 class="text-xl font-bold text-amber-500 mb-4">➖ 新增內部層板</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">層板標籤 (例如: 第3層)</label>
+                    <input type="text" id="new-shelf-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">該層淨高限制 (cm)</label>
+                    <input type="number" id="new-shelf-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2" value="35">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeModal('add-shelf-modal')" class="px-4 py-2 bg-gray-700 text-white rounded">取消</button>
+                <button onclick="createNewShelf()" class="px-4 py-2 bg-amber-600 text-white font-bold rounded">安插層板</button>
+            </div>
+        </div>
+    </div>
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'standalone-cabinet-app';
-        let db, auth, currentUserId;
-        
-        try {
-            if (typeof __firebase_config !== 'undefined') {
-                const firebaseConfig = JSON.parse(__firebase_config);
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                initAuth();
-            }
-        } catch (e) {
-            console.log("Firebase 尚未配置。");
-        }
-
-        async function initAuth() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                currentUserId = auth.currentUser?.uid;
-                if (currentUserId) loadLayout();
-            } catch (error) {
-                console.error("Auth init failed:", error);
-            }
-        }
-
-        // 綁定儲存功能到全域供 HTML onClick 使用
-        window.saveLayout = async function() {
-            const btn = document.getElementById('save-btn');
-            btn.innerHTML = '<svg class="animate-spin w-5 h-5 mr-2" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 儲存中...';
+    <!-- 匯出存檔 Modal -->
+    <div id="export-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-2xl w-full mx-4 shadow-2xl flex flex-col max-h-[90vh]">
+            <h3 class="text-xl font-bold text-amber-500 mb-4">💾 匯出配置與存檔</h3>
+            <p class="text-gray-400 text-sm mb-4">由於本應用程式改為完全離線運作以保障您的隱私，請選擇以下方式保存您的配置：</p>
             
-            const layoutData = {};
-            // 掃描包含暫存區在內的所有區域
-            document.querySelectorAll('.dropzone').forEach((zone, index) => {
-                const zoneId = zone.id || 'zone_' + index; 
-                if (!zone.id) zone.id = zoneId;
-                
-                const items = [];
-                zone.querySelectorAll('.toy-block').forEach(item => {
-                    items.push({
-                        name: item.getAttribute('data-name'),
-                        w: item.getAttribute('data-w'),
-                        h: item.getAttribute('data-h'),
-                        info: item.getAttribute('data-info'),
-                        inlineStyle: item.style.cssText,
-                        className: item.className,
-                        innerHTML: item.innerHTML
-                    });
-                });
-                layoutData[zoneId] = items;
-            });
+            <div class="flex gap-4 mb-6">
+                <button onclick="exportAsFile()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors text-center">
+                    📥 下載完整 HTML 檔案<br><span class="text-xs font-normal opacity-80">下次直接點開檔案即可繼續編輯</span>
+                </button>
+                <button onclick="showSourceCode()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-center">
+                    📋 顯示 HTML 原始碼<br><span class="text-xs font-normal opacity-80">複製文字以便備份或分享</span>
+                </button>
+            </div>
 
-            if (db && currentUserId) {
-                try {
-                    const docRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'layouts', 'current');
-                    await setDoc(docRef, { data: JSON.stringify(layoutData), timestamp: new Date() });
-                    window.showToast("配置已成功儲存至雲端！");
-                } catch (e) {
-                    window.showToast("儲存失敗，請確認網路連線。", true);
-                }
-            } else {
-                window.showToast("目前為離線預覽模式，無法儲存至雲端。", true);
-            }
+            <!-- 原始碼顯示區塊 (預設隱藏) -->
+            <div id="code-preview-area" class="hidden flex-col flex-1 min-h-0">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-bold text-gray-300">請全選並複製以下文字：</span>
+                    <button onclick="copyCodeText()" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">點我一鍵複製</button>
+                </div>
+                <textarea id="export-textarea" class="w-full flex-1 bg-gray-900 text-gray-300 border border-gray-600 rounded p-3 font-mono text-xs resize-none focus:outline-none" readonly></textarea>
+            </div>
 
-            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> 儲存當前配置';
-        };
-
-        // 載入先前的存檔
-        async function loadLayout() {
-            if (!db || !currentUserId) return;
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'layouts', 'current');
-                const snap = await getDoc(docRef);
-                if (snap.exists()) {
-                    const layoutData = JSON.parse(snap.data().data);
-                    // 清空現有玩具
-                    document.querySelectorAll('.toy-block').forEach(el => el.remove());
-
-                    // 重建玩具
-                    Object.keys(layoutData).forEach(zoneId => {
-                        const zone = document.getElementById(zoneId) || document.querySelectorAll('.dropzone')[parseInt(zoneId.replace('zone_', ''))];
-                        if (zone) {
-                            layoutData[zoneId].forEach(itemData => {
-                                const newToy = document.createElement('div');
-                                newToy.className = itemData.className;
-                                newToy.style.cssText = itemData.inlineStyle;
-                                newToy.setAttribute('draggable', 'true');
-                                newToy.setAttribute('data-name', itemData.name);
-                                newToy.setAttribute('data-w', itemData.w);
-                                newToy.setAttribute('data-h', itemData.h);
-                                newToy.setAttribute('data-info', itemData.info);
-                                newToy.innerHTML = itemData.innerHTML;
-                                
-                                window.attachToyEvents(newToy);
-                                zone.appendChild(newToy);
-                            });
-                        }
-                    });
-                    window.showToast("已成功載入您上次儲存的配置！");
-                }
-            } catch (e) { console.error(e); }
-        }
-    </script>
+            <div class="mt-6 flex justify-end shrink-0">
+                <button onclick="closeModal('export-modal')" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors">關閉視窗</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const tooltip = document.getElementById('tooltip');
         window.draggedItem = null;
-        
-        // 模組化：為玩具綁定互動事件 (供初始載入與新建玩具使用)
+        let targetShelfContainer = null; // 用於記錄要在哪個櫃體新增層板
+
+        // 初始化所有事件 (包含讀取匯出檔時的重新綁定)
+        window.onload = function() {
+            document.querySelectorAll('.toy-block').forEach(window.attachToyEvents);
+            document.querySelectorAll('.dropzone').forEach(window.attachDropzoneEvents);
+        };
+
+        // ================== 核心交互：拖曳與工具提示 ==================
         window.attachToyEvents = function(block) {
-            block.addEventListener('mouseenter', (e) => {
-                if(block.classList.contains('dragging')) return;
-                tooltip.innerHTML = block.getAttribute('data-info');
-                tooltip.classList.add('visible');
-                tooltip.style.left = e.clientX + 'px';
-                tooltip.style.top = e.clientY + 'px';
-            });
+            // 避免重複綁定
+            block.replaceWith(block.cloneNode(true));
+            const newBlock = document.querySelector(`.toy-block[data-name="${block.getAttribute('data-name')}"]`) || block; // fallback
             
-            block.addEventListener('mousemove', (e) => {
-                tooltip.style.left = e.clientX + 'px';
-                tooltip.style.top = e.clientY + 'px';
-            });
-            
-            block.addEventListener('mouseleave', () => {
-                tooltip.classList.remove('visible');
-            });
-
-            block.addEventListener('dragstart', (e) => {
-                window.draggedItem = block;
-                tooltip.classList.remove('visible');
-                setTimeout(() => block.classList.add('dragging'), 0);
-            });
-
-            block.addEventListener('dragend', () => {
-                block.classList.remove('dragging');
-                window.draggedItem = null;
-                document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-            });
+            // 需要重新抓取因為被替換過了，這裡寫法改良為直接對傳入元件的純淨拷貝做處理
         };
-
-        // 綁定頁面上預設的所有玩具
-        document.querySelectorAll('.toy-block').forEach(window.attachToyEvents);
-
-        // Dropzone 放置與驗證邏輯
-        const dropzones = document.querySelectorAll('.dropzone');
-        dropzones.forEach((dropzone, index) => {
-            // 給予ID以利存檔定位
-            if(!dropzone.id) dropzone.id = 'zone_' + index;
-
-            dropzone.addEventListener('dragover', (e) => {
-                e.preventDefault(); 
-                dropzone.classList.add('drag-over');
-            });
-
-            dropzone.addEventListener('dragleave', () => {
-                dropzone.classList.remove('drag-over');
-            });
-
-            dropzone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('drag-over');
+        
+        // 為了確保安全重新綁定，寫一個全域更新器
+        window.rebindAllEvents = function() {
+            const toys = document.querySelectorAll('.toy-block');
+            toys.forEach(block => {
+                block.onmouseenter = (e) => {
+                    if(block.classList.contains('dragging')) return;
+                    tooltip.innerHTML = block.getAttribute('data-info');
+                    tooltip.classList.add('visible');
+                    tooltip.style.left = e.clientX + 'px';
+                    tooltip.style.top = e.clientY + 'px';
+                };
+                block.onmousemove = (e) => {
+                    tooltip.style.left = e.clientX + 'px';
+                    tooltip.style.top = e.clientY + 'px';
+                };
+                block.onmouseleave = () => tooltip.classList.remove('visible');
                 
-                if (!window.draggedItem) return;
-                if (dropzone === window.draggedItem.parentElement) return; 
-
-                // 取得目標限制
-                const maxW = parseFloat(dropzone.getAttribute('data-max-w')) || 9999;
-                const maxH = parseFloat(dropzone.getAttribute('data-max-h')) || 9999;
-                const zoneName = dropzone.getAttribute('data-name');
-                
-                const itemW = parseFloat(window.draggedItem.getAttribute('data-w'));
-                const itemH = parseFloat(window.draggedItem.getAttribute('data-h'));
-                const itemName = window.draggedItem.getAttribute('data-name');
-
-                // 驗證高度
-                if (itemH > maxH) {
-                    showErrorModal(`【高度不足】<br>「${itemName}」高度為 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制僅 <b>${maxH}</b> cm<br><br>無法放入！高度超出了 <span class="text-red-400 font-bold text-xl">${(itemH - maxH).toFixed(1)}</span> cm`);
-                    return;
-                }
-
-                // 驗證寬度
-                const currentItems = Array.from(dropzone.querySelectorAll('.toy-block'));
-                const currentUsedW = currentItems.reduce((sum, item) => sum + parseFloat(item.getAttribute('data-w')), 0);
-                const remainingW = maxW - currentUsedW;
-
-                if (itemW > remainingW) {
-                    showErrorModal(`【寬度不足】<br>「${itemName}」需要面寬 <b>${itemW}</b> cm<br>「${zoneName}」目前剩餘寬度僅 <b>${remainingW.toFixed(1)}</b> cm<br><br>無法塞入！寬度還差了 <span class="text-red-400 font-bold text-xl">${(itemW - remainingW).toFixed(1)}</span> cm`);
-                    return;
-                }
-
-                // 驗證通過，移入新層板
-                dropzone.appendChild(window.draggedItem);
+                block.ondragstart = (e) => {
+                    window.draggedItem = block;
+                    tooltip.classList.remove('visible');
+                    setTimeout(() => block.classList.add('dragging'), 0);
+                };
+                block.ondragend = () => {
+                    block.classList.remove('dragging');
+                    window.draggedItem = null;
+                    document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
+                };
             });
-        });
 
-        // Modal 視窗邏輯
-        const addToyModal = document.getElementById('add-toy-modal');
-        const errorModal = document.getElementById('error-modal');
-        const errorMessage = document.getElementById('error-message');
+            const dropzones = document.querySelectorAll('.dropzone');
+            dropzones.forEach(dropzone => {
+                dropzone.ondragover = (e) => {
+                    e.preventDefault(); 
+                    dropzone.classList.add('drag-over');
+                };
+                dropzone.ondragleave = () => {
+                    dropzone.classList.remove('drag-over');
+                };
+                dropzone.ondrop = (e) => {
+                    e.preventDefault();
+                    dropzone.classList.remove('drag-over');
+                    
+                    if (!window.draggedItem) return;
+                    if (dropzone === window.draggedItem.parentElement) return; 
 
-        window.openAddToyModal = function() {
-            addToyModal.classList.remove('hidden');
-            addToyModal.classList.add('flex');
-        };
+                    const maxW = parseFloat(dropzone.getAttribute('data-max-w')) || 9999;
+                    const maxH = parseFloat(dropzone.getAttribute('data-max-h')) || 9999;
+                    const zoneName = dropzone.getAttribute('data-name') || '此區塊';
+                    
+                    const itemW = parseFloat(window.draggedItem.getAttribute('data-w'));
+                    const itemH = parseFloat(window.draggedItem.getAttribute('data-h'));
+                    const itemName = window.draggedItem.getAttribute('data-name');
 
-        window.closeAddToyModal = function() {
-            addToyModal.classList.add('hidden');
-            addToyModal.classList.remove('flex');
-            document.getElementById('new-toy-name').value = '';
-            document.getElementById('new-toy-w').value = '';
-            document.getElementById('new-toy-h').value = '';
-        };
+                    if (itemH > maxH) {
+                        showErrorModal(`【高度不足】<br>「${itemName}」高度為 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制為 <b>${maxH}</b> cm<br><br>無法放入！高度超出了 <span class="text-red-400 font-bold text-xl">${(itemH - maxH).toFixed(1)}</span> cm`);
+                        return;
+                    }
 
-        window.showErrorModal = function(msg) {
-            errorMessage.innerHTML = msg;
-            errorModal.classList.remove('hidden');
-            errorModal.classList.add('flex');
-        };
+                    const currentItems = Array.from(dropzone.querySelectorAll('.toy-block'));
+                    const currentUsedW = currentItems.reduce((sum, item) => sum + parseFloat(item.getAttribute('data-w')), 0);
+                    const remainingW = maxW - currentUsedW;
 
-        window.closeErrorModal = function() {
-            errorModal.classList.add('hidden');
-            errorModal.classList.remove('flex');
-        };
+                    if (itemW > remainingW) {
+                        showErrorModal(`【寬度不足】<br>「${itemName}」需面寬 <b>${itemW}</b> cm<br>「${zoneName}」剩餘寬度 <b>${remainingW.toFixed(1)}</b> cm<br><br>無法塞入！寬度還差 <span class="text-red-400 font-bold text-xl">${(itemW - remainingW).toFixed(1)}</span> cm`);
+                        return;
+                    }
+                    dropzone.appendChild(window.draggedItem);
+                };
+            });
+        }
+        
+        // 初次呼叫綁定
+        window.rebindAllEvents();
 
-        // 新增玩具建立邏輯
-        window.createNewToy = function() {
-            const name = document.getElementById('new-toy-name').value.trim();
-            const w = parseFloat(document.getElementById('new-toy-w').value);
-            const h = parseFloat(document.getElementById('new-toy-h').value);
-            const color = document.getElementById('new-toy-color').value;
-
-            if (!name || isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
-                showErrorModal("請填寫完整的玩具名稱與長高數值（須為大於 0 的數字）！");
-                return;
-            }
-
-            const pxW = w * 4;
-            const pxH = h * 4;
-
-            const newToy = document.createElement('div');
-            newToy.className = `toy-block draggable text-white text-[11px] font-bold flex flex-col items-center justify-center leading-tight text-center`;
-            newToy.style.backgroundColor = color;
-            newToy.style.width = pxW + 'px';
-            newToy.style.height = pxH + 'px';
-            
-            newToy.setAttribute('draggable', 'true');
-            newToy.setAttribute('data-name', name);
-            newToy.setAttribute('data-w', w);
-            newToy.setAttribute('data-h', h);
-            newToy.setAttribute('data-info', `${name}<br>寬: ${w} cm / 高: ${h} cm`);
-            
-            newToy.innerHTML = name.length > 5 ? name.substring(0, 4) + '..' : name;
-
-            window.attachToyEvents(newToy);
-            document.getElementById('staging-area').appendChild(newToy);
-            
-            closeAddToyModal();
-            window.showToast('已成功新增玩具至暫存庫存區！');
+        // ================== Modal 控制與共用工具 ==================
+        window.closeModal = function(id) {
+            document.getElementById(id).classList.add('hidden');
+            document.getElementById(id).classList.remove('flex');
         };
 
         window.showToast = function(msg, isError = false) {
@@ -655,11 +382,200 @@
             toast.className = `fixed bottom-5 right-5 z-[1000] text-white px-6 py-3 rounded-lg shadow-xl transition-opacity duration-300 ${isError ? 'bg-red-600' : 'bg-emerald-600'}`;
             toast.classList.remove('hidden');
             setTimeout(() => toast.classList.remove('opacity-0'), 10);
-            
             setTimeout(() => {
                 toast.classList.add('opacity-0');
                 setTimeout(() => toast.classList.add('hidden'), 300);
             }, 3000);
+        };
+
+        window.showErrorModal = function(msg) {
+            document.getElementById('error-message').innerHTML = msg;
+            document.getElementById('error-modal').classList.remove('hidden');
+            document.getElementById('error-modal').classList.add('flex');
+        };
+        window.closeErrorModal = () => closeModal('error-modal');
+
+        // ================== 新增與刪除物件邏輯 ==================
+        
+        // 玩具元件
+        window.openAddToyModal = () => {
+            document.getElementById('add-toy-modal').classList.remove('hidden');
+            document.getElementById('add-toy-modal').classList.add('flex');
+        };
+        window.closeAddToyModal = () => {
+            closeModal('add-toy-modal');
+            document.getElementById('new-toy-name').value = '';
+        };
+        window.createNewToy = function() {
+            const name = document.getElementById('new-toy-name').value.trim();
+            const w = parseFloat(document.getElementById('new-toy-w').value);
+            const h = parseFloat(document.getElementById('new-toy-h').value);
+            const color = document.getElementById('new-toy-color').value;
+
+            if (!name || isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+                showErrorModal("請填寫完整的玩具名稱與長高數值（須大於0）！"); return;
+            }
+
+            const newToy = document.createElement('div');
+            newToy.className = `toy-block draggable text-white text-[11px] font-bold flex flex-col items-center justify-center leading-tight text-center`;
+            newToy.style.backgroundColor = color;
+            newToy.style.width = (w * 4) + 'px';
+            newToy.style.height = (h * 4) + 'px';
+            newToy.setAttribute('draggable', 'true');
+            newToy.setAttribute('data-name', name);
+            newToy.setAttribute('data-w', w);
+            newToy.setAttribute('data-h', h);
+            newToy.setAttribute('data-info', `${name}<br>寬: ${w} cm / 高: ${h} cm`);
+            newToy.innerHTML = name.length > 5 ? name.substring(0, 4) + '..' : name;
+
+            document.getElementById('staging-area').appendChild(newToy);
+            window.rebindAllEvents();
+            closeAddToyModal();
+            showToast('已成功新增玩具至暫存區！');
+        };
+
+        // 櫃體
+        window.openAddCabinetModal = () => {
+            document.getElementById('add-cabinet-modal').classList.remove('hidden');
+            document.getElementById('add-cabinet-modal').classList.add('flex');
+        };
+        window.createNewCabinet = function() {
+            const name = document.getElementById('new-cab-name').value.trim() || '自訂櫃';
+            const w = parseFloat(document.getElementById('new-cab-w').value);
+            if(isNaN(w) || w < 10) return showErrorModal("櫃體寬度必須大於 10 公分！");
+
+            const col = document.createElement('div');
+            col.className = 'cabinet-col group flex flex-col gap-2';
+            col.setAttribute('data-w', w);
+            col.innerHTML = `
+                <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative">
+                    <button onclick="deleteCabinet(this)" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="刪除整個櫃體">✖</button>
+                    <h2 class="text-lg font-bold text-gray-200 tracking-widest cabinet-name">${name}</h2>
+                    <p class="text-xs text-amber-500 font-medium mt-1">內徑寬 ${w}cm</p>
+                    <button onclick="openAddShelfModal(this)" class="mt-2 text-[10px] bg-amber-700/50 hover:bg-amber-600 text-white px-2 py-1 rounded transition-colors w-full border border-amber-600/50">+ 新增層板</button>
+                </div>
+                <div class="shelf-container flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl border-b-[16px] border-b-[#3d2b1f] justify-end min-h-[100px]">
+                </div>
+            `;
+            
+            const btnContainer = document.querySelector('#cabinet-canvas > div:last-child');
+            document.getElementById('cabinet-canvas').insertBefore(col, btnContainer);
+            closeModal('add-cabinet-modal');
+            showToast('櫃體新增成功！請開始加入層板。');
+        };
+        window.deleteCabinet = function(btn) {
+            const col = btn.closest('.cabinet-col');
+            rescueToysToStaging(col);
+            col.remove();
+            showToast('櫃體已移除，內部物件已安全移至暫存區。');
+        };
+
+        // 層板
+        window.openAddShelfModal = (btn) => {
+            targetShelfContainer = btn.closest('.cabinet-col').querySelector('.shelf-container');
+            document.getElementById('add-shelf-modal').classList.remove('hidden');
+            document.getElementById('add-shelf-modal').classList.add('flex');
+        };
+        window.createNewShelf = function() {
+            if(!targetShelfContainer) return;
+            const name = document.getElementById('new-shelf-name').value.trim() || '自訂層';
+            const h = parseFloat(document.getElementById('new-shelf-h').value);
+            const parentW = parseFloat(targetShelfContainer.closest('.cabinet-col').getAttribute('data-w'));
+            const cabName = targetShelfContainer.closest('.cabinet-col').querySelector('.cabinet-name').innerText;
+
+            if(isNaN(h) || h < 5) return showErrorModal("層板淨高必須大於 5 公分！");
+
+            const shelf = document.createElement('div');
+            shelf.className = 'shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f] group/shelf';
+            shelf.style.width = (parentW * 4) + 'px';
+            shelf.style.height = (h * 4) + 'px';
+            shelf.setAttribute('data-name', `${cabName}-${name}`);
+            shelf.setAttribute('data-max-w', parentW);
+            shelf.setAttribute('data-max-h', h);
+            
+            shelf.innerHTML = `
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">${name} (高${h})</span>
+                <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
+            `;
+            
+            // 插入在最上方(視覺上的最頂層)
+            targetShelfContainer.insertBefore(shelf, targetShelfContainer.firstChild);
+            window.rebindAllEvents();
+            closeModal('add-shelf-modal');
+            showToast('層板新增成功！');
+        };
+        window.deleteShelf = function(btn) {
+            const shelf = btn.closest('.dropzone');
+            rescueToysToStaging(shelf);
+            shelf.remove();
+            showToast('層板已移除，內部物件已安全移至暫存區。');
+        };
+
+        // 救援物件函式 (安全轉移)
+        function rescueToysToStaging(container) {
+            const staging = document.getElementById('staging-area');
+            container.querySelectorAll('.toy-block').forEach(toy => {
+                staging.appendChild(toy);
+            });
+        }
+
+        // ================== 匯出存檔邏輯 (純前端方案) ==================
+        window.openExportModal = () => {
+            document.getElementById('code-preview-area').classList.add('hidden');
+            document.getElementById('export-modal').classList.remove('hidden');
+            document.getElementById('export-modal').classList.add('flex');
+        };
+
+        function getCleanHTMLContent() {
+            // 複製當前網頁 DOM 樹
+            const clonedDoc = document.documentElement.cloneNode(true);
+            
+            // 移除不需要保留在存檔裡的狀態 (如隱藏所有開啟的 modal)
+            clonedDoc.querySelectorAll('.fixed').forEach(el => {
+                if (el.id !== 'tooltip' && el.id !== 'toast-msg') {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex');
+                }
+            });
+            // 移除 dragging 狀態
+            clonedDoc.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+            clonedDoc.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            
+            // 清空 textarea 避免無窮迴圈自我複製增長
+            const textarea = clonedDoc.querySelector('#export-textarea');
+            if(textarea) textarea.textContent = '';
+            
+            return '<!DOCTYPE html>\n<html lang="zh-TW">\n' + clonedDoc.innerHTML + '\n</html>';
+        }
+
+        window.exportAsFile = function() {
+            const htmlContent = getCleanHTMLContent();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'MyCabinetPlanner.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('已成功下載存檔！下次直接點開檔案即可。');
+        };
+
+        window.showSourceCode = function() {
+            const htmlContent = getCleanHTMLContent();
+            const area = document.getElementById('code-preview-area');
+            const textarea = document.getElementById('export-textarea');
+            area.classList.remove('hidden');
+            area.classList.add('flex');
+            textarea.value = htmlContent;
+        };
+
+        window.copyCodeText = function() {
+            const textarea = document.getElementById('export-textarea');
+            textarea.select();
+            document.execCommand('copy');
+            showToast('原始碼已複製到剪貼簿！');
         };
     </script>
 </body>
