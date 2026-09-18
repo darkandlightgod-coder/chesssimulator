@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>系統櫃 1:1 比例空間驗證與拖曳沙盤</title>
+    <title>系統櫃 1:1 高擬真驗證與拖曳沙盤</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root { --scale: 4px; /* 1cm = 4px */ }
@@ -16,6 +16,7 @@
             overscroll-behavior: none;
         }
 
+        /* 修正重力：讓內容物絕對靠下 */
         .shelf-bg {
             background-image: 
                 linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
@@ -23,11 +24,30 @@
             background-size: 20px 20px; /* 5cm grid */
             background-position: bottom left;
             transition: background-color 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            flex-wrap: wrap; 
+            align-items: flex-end; 
+            align-content: flex-end;
         }
 
         .shelf-bg.drag-over, .staging-bg.drag-over {
             background-color: rgba(245, 158, 11, 0.2);
             box-shadow: inset 0 0 20px rgba(245, 158, 11, 0.6);
+        }
+
+        /* 拖曳調整高度的控制把手 */
+        .resize-handle {
+            position: absolute;
+            top: -5px;
+            left: 0;
+            width: 100%;
+            height: 10px;
+            cursor: ns-resize;
+            z-index: 30;
+            transition: background-color 0.2s;
+        }
+        .resize-handle:hover {
+            background-color: rgba(245, 158, 11, 0.4);
         }
 
         .toy-block {
@@ -37,11 +57,12 @@
             flex-shrink: 0; 
             touch-action: none; 
             position: relative;
+            background-repeat: no-repeat;
         }
         
         @media (hover: hover) {
             .toy-block:hover {
-                filter: brightness(1.3);
+                filter: brightness(1.2);
                 transform: translateY(-2px);
                 box-shadow: 0 4px 12px rgba(255,255,255,0.2), inset 0 0 0 1px rgba(255,255,255,0.5);
                 z-index: 10;
@@ -56,17 +77,15 @@
             z-index: 50;
         }
 
-        .delete-btn {
+        /* 按鈕 UI */
+        .delete-btn, .img-btn {
             position: absolute;
-            top: -6px;
-            right: -6px;
-            width: 16px;
-            height: 16px;
-            background: #ef4444;
+            width: 18px;
+            height: 18px;
             color: white;
             border-radius: 50%;
             font-size: 10px;
-            line-height: 16px;
+            line-height: 18px;
             text-align: center;
             cursor: pointer;
             opacity: 0;
@@ -74,25 +93,23 @@
             z-index: 20;
             box-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
-        .toy-block:hover .delete-btn { opacity: 1; }
+        .delete-btn { top: -6px; right: -6px; background: #ef4444; }
+        .img-btn { top: -6px; left: -6px; background: #3b82f6; }
+        .toy-block:hover .delete-btn, .toy-block:hover .img-btn { opacity: 1; }
 
-        .delete-shelf-btn, .delete-cabinet-btn {
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-        .group:hover > .delete-shelf-btn, .cabinet-group:hover .delete-cabinet-btn {
-            opacity: 1;
-        }
+        .shelf-action-btn { opacity: 0; transition: opacity 0.2s; }
+        .group:hover > .shelf-action-btn, .cabinet-group:hover .cabinet-action-btn { opacity: 1; }
 
+        /* 提示框 Tooltip */
         #tooltip {
             pointer-events: none;
             opacity: 0;
-            transition: opacity 0.15s ease, transform 0.1s ease;
+            transition: opacity 0.1s ease, transform 0.1s ease;
             transform: translate(-50%, -10px);
         }
         #tooltip.visible {
             opacity: 1;
-            transform: translate(-50%, -40px);
+            transform: translate(-50%, -45px);
         }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -103,13 +120,16 @@
 </head>
 <body class="flex flex-col md:flex-row h-screen w-full overflow-hidden">
 
-    <!-- =================== 左側面板/上方控制台 (響應式) =================== -->
+    <!-- 隱藏的圖片上傳器 -->
+    <input type="file" id="image-uploader" accept="image/*" class="hidden">
+
+    <!-- =================== 左側/上方面板 (響應式) =================== -->
     <div class="w-full md:w-80 lg:w-96 flex flex-col h-[40vh] md:h-full flex-shrink-0 z-20 shadow-[0_5px_15px_rgba(0,0,0,0.5)] md:shadow-[5px_0_15px_rgba(0,0,0,0.5)] bg-[#1e1814] border-b-4 md:border-b-0 md:border-r-4 border-[#3d2b1f]">
         <div class="p-3 md:p-5 border-b border-[#3d2b1f] bg-[#16120f] flex-shrink-0">
             <h1 class="text-base md:text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-sm md:text-lg">1:1 絕對比例沙盤</span></h1>
-            <p class="hidden md:block text-gray-400 text-xs mb-4 leading-relaxed">
-                <strong class="text-amber-400">1 公分 = 4 像素</strong><br>
-                拖曳色塊進行排版，系統會自動驗證剩餘長寬高。
+            <p class="hidden md:block text-gray-400 text-xs mb-3 leading-relaxed">
+                <strong class="text-amber-400">滑鼠移至玩具上可看尺寸，點擊 🖼️ 可換圖</strong><br>
+                按住層板上緣可拖曳修改高度！
             </p>
             <div class="flex flex-row md:flex-col gap-2 md:gap-3">
                 <button onclick="openModal('add-toy-modal')" class="flex-1 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-1 md:gap-2">
@@ -132,9 +152,9 @@
         </div>
     </div>
 
-    <!-- =================== 右側畫布/下方櫃體區 (可捲動) =================== -->
+    <!-- =================== 右側/下方畫布區 =================== -->
     <div class="flex-1 bg-[#121212] overflow-auto relative p-4 md:p-8" id="canvas-container">
-        <div id="cabinet-canvas" class="flex gap-4 md:gap-8 items-end min-w-max pb-20 pt-10">
+        <div id="cabinet-canvas" class="flex gap-4 md:gap-8 items-end min-w-max pb-20 pt-10 px-4">
             <!-- 櫃體會透過 JS 插入此處 -->
             
             <div class="flex items-center h-full pb-4 shrink-0">
@@ -146,8 +166,8 @@
         </div>
     </div>
 
-    <!-- UI 元素 -->
-    <div id="tooltip" class="fixed z-[100] bg-gray-900 text-white border border-amber-500/50 rounded shadow-xl px-4 py-2 text-sm text-center hidden md:block"></div>
+    <!-- Tooltip -->
+    <div id="tooltip" class="fixed z-[100] bg-gray-900/95 text-white border border-amber-500/50 rounded-lg shadow-xl px-4 py-3 text-sm text-center hidden md:block backdrop-blur-sm pointer-events-none"></div>
 
     <!-- Error Modal -->
     <div id="error-modal" class="fixed inset-0 z-[999] bg-black/70 hidden items-center justify-center backdrop-blur-sm px-4">
@@ -178,7 +198,7 @@
                     </div>
                 </div>
                 <div>
-                    <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">代表顏色</label>
+                    <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">代表顏色 (上傳圖片前墊底色)</label>
                     <input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#b91c1c">
                 </div>
             </div>
@@ -193,7 +213,7 @@
     <div id="export-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
         <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh]">
             <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-3">💾 匯出配置與存檔</h3>
-            <p class="text-gray-400 text-xs md:text-sm mb-4">保存您的心血配置：</p>
+            <p class="text-gray-400 text-xs md:text-sm mb-4">這會打包當前所有的圖片、尺寸與排列狀態：</p>
             <div class="flex flex-col md:flex-row gap-3 md:gap-4 mb-4">
                 <button onclick="exportAsFile()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors text-sm">📥 下載 HTML 存檔</button>
                 <button onclick="showSourceCode()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-sm">📋 顯示原始碼</button>
@@ -262,6 +282,7 @@
         let touchOffsetX = 0;
         let touchOffsetY = 0;
         let activeDropzone = null;
+        let uploadTarget = null; // 記錄目前要更換圖片的元件
 
         window.rebindAllEvents = function() {
             const toys = document.querySelectorAll('.toy-block');
@@ -269,6 +290,7 @@
                 if (block.dataset.bound === 'true') return;
                 block.dataset.bound = 'true';
 
+                // Desktop Tooltip
                 block.addEventListener('mouseenter', (e) => {
                     if(block.classList.contains('dragging') || window.innerWidth < 768) return;
                     tooltip.innerHTML = block.getAttribute('data-info');
@@ -282,6 +304,7 @@
                 });
                 block.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
                 
+                // Desktop Drag
                 block.addEventListener('dragstart', (e) => {
                     draggedItem = block;
                     tooltip.classList.remove('visible');
@@ -296,7 +319,7 @@
                 // Touch support
                 block.addEventListener('touchstart', (e) => {
                     if(e.touches.length > 1) return;
-                    if(e.target.classList.contains('delete-btn')) return; // 避免按刪除時觸發拖曳
+                    if(e.target.closest('.delete-btn') || e.target.closest('.img-btn')) return; // 避免點按鈕觸發拖曳
                     draggedItem = block;
                     const touch = e.touches[0];
                     const rect = block.getBoundingClientRect();
@@ -397,12 +420,108 @@
             dropzone.appendChild(item);
         }
 
+        // --- 圖片上傳功能 ---
+        const uploader = document.getElementById('image-uploader');
+        window.triggerImageUpload = function(event, btn) {
+            event.stopPropagation();
+            if(event.type === 'touchstart') event.preventDefault();
+            const toy = btn.closest('.toy-block');
+            const shelf = btn.closest('.shelf-container');
+            uploadTarget = toy || (shelf ? shelf.querySelector('.dropzone') : null);
+            if (uploadTarget) uploader.click();
+        };
+
+        uploader.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !uploadTarget) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const imgUrl = event.target.result;
+                uploadTarget.style.backgroundImage = `url(${imgUrl})`;
+                uploadTarget.style.backgroundSize = 'cover';
+                uploadTarget.style.backgroundPosition = 'center';
+                
+                if (uploadTarget.classList.contains('toy-block')) {
+                    const textSpan = uploadTarget.querySelector('.text-content');
+                    if (textSpan) textSpan.style.opacity = '0'; // 隱藏文字
+                    uploadTarget.style.backgroundColor = 'transparent';
+                    uploadTarget.style.boxShadow = 'none'; // 取消內陰影讓圖更好看
+                }
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        });
+
+        let isResizing = false;
+        let resizeTarget = null;
+        let startY = 0;
+        let startHeight = 0;
+
+        window.startResizeShelf = function(e, handle) {
+            e.preventDefault();
+            e.stopPropagation();
+            isResizing = true;
+            resizeTarget = handle.closest('.shelf-container');
+            startY = e.clientY || (e.touches && e.touches[0].clientY);
+            startHeight = parseFloat(resizeTarget.style.height);
+            
+            document.addEventListener('mousemove', doResize);
+            document.addEventListener('mouseup', stopResize);
+            document.addEventListener('touchmove', doResize, {passive: false});
+            document.addEventListener('touchend', stopResize);
+            
+            handle.style.backgroundColor = 'rgba(245, 158, 11, 0.6)';
+        }
+
+        function doResize(e) {
+            if (!isResizing) return;
+            e.preventDefault();
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            const deltaY = startY - clientY; // 往上拖 delta 為正
+            let newHeightPx = startHeight + deltaY;
+            
+            const dropzone = resizeTarget.querySelector('.dropzone');
+            
+            // 找出該層最高的玩具作為高度底線
+            const toys = Array.from(dropzone.querySelectorAll('.toy-block'));
+            let maxToyH = 10; // 最小 10cm
+            toys.forEach(t => {
+                const th = parseFloat(t.getAttribute('data-h'));
+                if (th > maxToyH) maxToyH = th;
+            });
+            const minHeightPx = maxToyH * SCALE;
+
+            if (newHeightPx < minHeightPx) newHeightPx = minHeightPx; 
+            
+            resizeTarget.style.height = newHeightPx + 'px';
+            
+            const newHeightCm = Math.round(newHeightPx / SCALE);
+            dropzone.setAttribute('data-max-h', newHeightCm);
+            
+            const label = resizeTarget.querySelector('.shelf-label');
+            const name = dropzone.getAttribute('data-name');
+            label.innerText = `${name} (高${newHeightCm})`;
+        }
+
+        function stopResize() {
+            if(!isResizing) return;
+            isResizing = false;
+            if(resizeTarget) {
+                const handle = resizeTarget.querySelector('.resize-handle');
+                if(handle) handle.style.backgroundColor = '';
+            }
+            resizeTarget = null;
+            document.removeEventListener('mousemove', doResize);
+            document.removeEventListener('mouseup', stopResize);
+            document.removeEventListener('touchmove', doResize);
+            document.removeEventListener('touchend', stopResize);
+        }
+
         window.deleteToy = function(event, btn) {
             event.stopPropagation();
             if(event.type === 'touchstart') event.preventDefault();
             const toy = btn.closest('.toy-block');
             const staging = document.getElementById('staging-area');
-
             if (toy.parentElement === staging) {
                 toy.remove();
             } else {
@@ -438,21 +557,19 @@
             const name = document.getElementById('new-cab-name').value || '新櫃體';
             const w = parseFloat(document.getElementById('new-cab-w').value) || 70;
             const cabId = 'cab_' + Date.now();
-
             const cabHtml = `
                 <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${cabId}">
-                    <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group">
+                    <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group z-20">
                         ${name} (寬 ${w}cm)
-                        <button onclick="deleteCabinet(this)" class="delete-cabinet-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
-                        <button onclick="openAddShelf('${cabId}')" class="absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-xs flex items-center gap-1">+ 層板</button>
+                        <button onclick="deleteCabinet(this)" class="cabinet-action-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
+                        <button onclick="openAddShelf('${cabId}')" class="cabinet-action-btn absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-[10px] md:text-xs">+ 層板</button>
                     </div>
                     <div class="shelf-list flex flex-col flex-1 justify-end"></div>
-                </div>
-            `;
+                </div>`;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = cabHtml.trim();
             const canvas = document.getElementById('cabinet-canvas');
-            canvas.insertBefore(wrapper.firstChild, canvas.lastElementChild);
+            canvas.insertBefore(wrapper.firstChild, canvas.querySelector('.pb-4.shrink-0'));
             closeModal('add-cabinet-modal');
         };
 
@@ -460,7 +577,6 @@
             const cabId = document.getElementById('target-cabinet-id').value;
             const name = document.getElementById('new-shelf-name').value || '新層板';
             const h = parseFloat(document.getElementById('new-shelf-h').value) || 35;
-            
             const cab = document.getElementById(cabId);
             const titleDiv = cab.querySelector('.w-full.bg-\\[\\#3d2b1f\\]');
             const match = titleDiv.innerText.match(/寬\s*([\d.]+)cm/);
@@ -468,14 +584,15 @@
 
             const shelfHtml = `
                 <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
-                    <div class="absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none">${name} (高${h})</div>
-                    <button onclick="deleteShelf(this)" class="delete-shelf-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-10 px-1">✖ 刪除</button>
-                    <div class="dropzone shelf-bg w-full h-full flex items-end content-end flex-wrap-reverse" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
-                </div>
-            `;
+                    <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
+                    <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
+                    <button onclick="triggerImageUpload(event, this)" class="shelf-action-btn absolute right-[45px] -top-[18px] text-blue-400 hover:text-blue-300 text-[10px] z-20 px-1">🖼️ 背景</button>
+                    <button onclick="deleteShelf(this)" class="shelf-action-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-20 px-1">✖ 刪除</button>
+                    <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
+                </div>`;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = shelfHtml.trim();
-            cab.querySelector('.shelf-list').prepend(wrapper.firstChild); // 新增在最上方
+            cab.querySelector('.shelf-list').prepend(wrapper.firstChild);
             rebindAllEvents();
             closeModal('add-shelf-modal');
         };
@@ -495,24 +612,25 @@
             toy.setAttribute('data-name', name);
             toy.setAttribute('data-w', w);
             toy.setAttribute('data-h', h);
-            toy.setAttribute('data-info', `<b>${name}</b><br>面寬: ${w} cm<br>高度: ${h} cm`);
-            toy.innerHTML = `<span class="truncate px-1 pointer-events-none">${name}</span>
-                             <div class="delete-btn" ontouchstart="deleteToy(event, this)" onclick="deleteToy(event, this)">✖</div>`;
+            toy.setAttribute('data-info', `<div class="text-left"><b class="text-amber-400 text-base">${name}</b><br><span class="text-gray-300">面寬: <b class="text-white">${w}</b> cm<br>高度: <b class="text-white">${h}</b> cm</span></div>`);
+            toy.innerHTML = `
+                <span class="text-content truncate px-1 pointer-events-none">${name}</span>
+                <div class="img-btn" ontouchstart="triggerImageUpload(event, this)" onclick="triggerImageUpload(event, this)">🖼️</div>
+                <div class="delete-btn" ontouchstart="deleteToy(event, this)" onclick="deleteToy(event, this)">✖</div>`;
 
             document.getElementById('staging-area').appendChild(toy);
             rebindAllEvents();
             closeModal('add-toy-modal');
         };
 
-        // Modal Helpers
+        // Modal Helpers & Export
         window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
         window.closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
         window.showErrorModal = (msg) => { document.getElementById('error-message').innerHTML = msg; openModal('error-modal'); };
 
-        // Export System
         window.exportAsFile = function() {
             const scriptNode = document.getElementById('init-toys');
-            if(scriptNode) scriptNode.remove(); // 匯出前移除自動生成腳本，保留最新狀態
+            if(scriptNode) scriptNode.remove();
             const htmlContent = document.documentElement.outerHTML;
             const blob = new Blob([htmlContent], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
@@ -533,9 +651,7 @@
             const ta = document.getElementById('export-textarea');
             ta.select();
             document.execCommand('copy');
-            alert('已複製原始碼！');
         };
-
     </script>
 
     <!-- ========================================== -->
@@ -544,16 +660,15 @@
     <script id="init-toys">
         (function() {
             const canvas = document.getElementById('cabinet-canvas');
-            const staging = document.getElementById('staging-area');
-            const btnContainer = canvas.querySelector('.flex.items-center');
+            const btnContainer = canvas.querySelector('.pb-4.shrink-0');
 
             function buildCabinet(id, title, w) {
                 const cabHtml = `
                     <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${id}">
-                        <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group">
+                        <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group z-20">
                             ${title} (寬 ${w}cm)
-                            <button onclick="deleteCabinet(this)" class="delete-cabinet-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
-                            <button onclick="openAddShelf('${id}')" class="absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-xs flex items-center gap-1">+ 層板</button>
+                            <button onclick="deleteCabinet(this)" class="cabinet-action-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
+                            <button onclick="openAddShelf('${id}')" class="cabinet-action-btn absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-[10px] md:text-xs">+ 層板</button>
                         </div>
                         <div class="shelf-list flex flex-col flex-1 justify-end"></div>
                     </div>`;
@@ -566,15 +681,15 @@
             function buildShelf(cabEl, name, w, h) {
                 const shelfHtml = `
                     <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
-                        <div class="absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none">${name} (高${h})</div>
-                        <button onclick="deleteShelf(this)" class="delete-shelf-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-10 px-1">✖ 刪除</button>
-                        <div class="dropzone shelf-bg w-full h-full flex items-end content-end flex-wrap-reverse" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
+                        <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
+                        <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
+                        <button onclick="triggerImageUpload(event, this)" class="shelf-action-btn absolute right-[45px] -top-[18px] text-blue-400 hover:text-blue-300 text-[10px] z-20 px-1">🖼️ 背景</button>
+                        <button onclick="deleteShelf(this)" class="shelf-action-btn absolute right-1 -top-[18px] text-red-500 hover:text-red-400 text-[10px] z-20 px-1">✖ 刪除</button>
+                        <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
                     </div>`;
                 const wrapper = document.createElement('div');
                 wrapper.innerHTML = shelfHtml.trim();
-                // 為了正確的由上到下順序，我們用 prepend 插入 (因為 CSS 是 flex-end)
-                // 順序：呼叫 buildShelf 時，越晚建立的會排在越上面。所以我們應該先建底層，再建上層
-                cabEl.querySelector('.shelf-list').prepend(wrapper.firstChild);
+                cabEl.querySelector('.shelf-list').prepend(wrapper.firstChild); 
                 return cabEl.querySelector('.shelf-container:first-child .dropzone');
             }
 
@@ -582,8 +697,10 @@
                 const toyHtml = `
                     <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] md:text-xs overflow-hidden shadow-md leading-none text-center select-none"
                          style="width: ${w * SCALE}px; height: ${h * SCALE}px; background-color: ${color};"
-                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" data-info="<b>${name}</b><br>面寬: ${w} cm<br>高度: ${h} cm">
-                        <span class="truncate px-1 pointer-events-none">${name}</span>
+                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" 
+                         data-info="<div class='text-left'><b class='text-amber-400 text-base'>${name}</b><br><span class='text-gray-300'>面寬: <b class='text-white'>${w}</b> cm<br>高度: <b class='text-white'>${h}</b> cm</span></div>">
+                        <span class="text-content truncate px-1 pointer-events-none">${name}</span>
+                        <div class="img-btn" ontouchstart="triggerImageUpload(event, this)" onclick="triggerImageUpload(event, this)">🖼️</div>
                         <div class="delete-btn" ontouchstart="deleteToy(event, this)" onclick="deleteToy(event, this)">✖</div>
                     </div>`;
                 const wrapper = document.createElement('div');
@@ -595,12 +712,11 @@
             const C_Ghibli = "#8fbc8f", C_Weird = "#f08080", C_Anime = "#87cefa", C_Mini = "#dda0dd";
             const C_Girls = "#ffb6c1", C_LOTR = "#ffd700", C_Pixar = "#d3d3d3", C_Lego = "#20b2aa";
 
-            // 建立三個櫃體
-            const cabL = buildCabinet('cab_L', '左區', 70);
-            const cabM = buildCabinet('cab_M', '中區', 70);
-            const cabR = buildCabinet('cab_R', '右區', 70);
+            const cabL = buildCabinet('cab_L', '左區 (深度21-24)', 70);
+            const cabM = buildCabinet('cab_M', '中區 (深度21-24)', 70);
+            const cabR = buildCabinet('cab_R', '右區 (深度21-24)', 70);
 
-            // ================== 左區 ==================
+            // ================== 左區 (由下往上建) ==================
             const L0 = buildShelf(cabL, '底層', 70, 65);
             injectToy(L0, '巴斯存錢筒', 33, 41, C_Pixar);
             injectToy(L0, '佐格', 25, 40, C_Pixar);
@@ -619,22 +735,22 @@
             injectToy(L3, '巴斯電子', 23, 28, C_Pixar);
             injectToy(L3, '巴斯一番', 19, 26, C_Pixar);
 
-            const L4 = buildShelf(cabL, '第4層', 70, 25);
-            injectToy(L4, 'EL', 7, 14.7, C_Mini);
-            injectToy(L4, 'HE', 7.5, 18, C_Mini);
-            injectToy(L4, 'DU', 7.1, 14.2, C_Mini);
-            injectToy(L4, 'RO', 10.5, 15.6, C_Mini);
-            injectToy(L4, 'VE', 8.5, 16.6, C_Mini);
-            injectToy(L4, 'DE', 10.9, 16.6, C_Mini);
-            injectToy(L4, 'DE', 10.9, 16.6, C_Mini);
+            const L4 = buildShelf(cabL, '第4層 (淺)', 70, 25);
+            injectToy(L4, 'ELEVEN', 7, 14.7, C_Mini);
+            injectToy(L4, 'HELLFIRE', 7.5, 18, C_Mini);
+            injectToy(L4, 'DUSTIN', 7.1, 14.2, C_Mini);
+            injectToy(L4, 'ROCKSTAR', 10.5, 15.6, C_Mini);
+            injectToy(L4, 'VECNA', 8.5, 16.6, C_Mini);
+            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, C_Mini);
+            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, C_Mini);
 
-            const L5 = buildShelf(cabL, '第5層', 70, 20);
+            const L5 = buildShelf(cabL, '第5層 (淺)', 70, 20);
             injectToy(L5, '龍貓', 21, 7.7, C_Ghibli);
             injectToy(L5, '小千', 21, 7.7, C_Ghibli);
 
-            const L6 = buildShelf(cabL, '頂層', 70, 40);
+            buildShelf(cabL, '頂層擴充區', 70, 40);
 
-            // ================== 中區 ==================
+            // ================== 中區 (由下往上建) ==================
             const M0 = buildShelf(cabM, '底層', 70, 65);
             injectToy(M0, 'THE JOKER', 39, 50, C_Weird);
             injectToy(M0, '魔多戒靈', 23.5, 46, C_LOTR);
@@ -654,28 +770,28 @@
             injectToy(M3, '綠惡魔', 24, 26, C_Lego);
             injectToy(M3, '蜘蛛(側)', 16, 17, C_Lego);
 
-            const M4 = buildShelf(cabM, '第4層', 70, 25);
-            injectToy(M4, 'SL', 8, 16.4, C_Mini);
-            injectToy(M4, 'SV', 9.1, 17.2, C_Mini);
-            injectToy(M4, 'EG', 10.5, 17.6, C_Mini);
-            injectToy(M4, 'FACE', 13.5, 15, C_Mini);
+            const M4 = buildShelf(cabM, '第4層 (淺)', 70, 25);
+            injectToy(M4, 'SLIMER', 8, 16.4, C_Mini);
+            injectToy(M4, 'VENKMAN', 9.1, 17.2, C_Mini);
+            injectToy(M4, 'EGON', 10.5, 17.6, C_Mini);
+            injectToy(M4, 'FACEHUGGER', 13.5, 15, C_Mini);
 
-            const M5 = buildShelf(cabM, '第5層', 70, 20);
-            injectToy(M5, 'Pi', 7.6, 15.2, C_Weird);
-            injectToy(M5, 'ps', 6.4, 9.5, C_Weird);
+            const M5 = buildShelf(cabM, '第5層 (淺)', 70, 20);
+            injectToy(M5, 'Pickle', 7.6, 15.2, C_Weird);
+            injectToy(M5, 'P.small', 6.4, 9.5, C_Weird);
             injectToy(M5, '超人', 10, 16, C_Weird);
-            injectToy(M5, 'EL', 7.5, 11, C_Weird);
+            injectToy(M5, 'ELLO', 7.5, 11, C_Weird);
 
-            const M6 = buildShelf(cabM, '頂層', 70, 40);
+            buildShelf(cabM, '頂層擴充區', 70, 40);
 
-            // ================== 右區 ==================
+            // ================== 右區 (由下往上建) ==================
             const R0 = buildShelf(cabR, '底層', 70, 65);
             injectToy(R0, 'JARETH', 30.5, 57.5, C_Weird);
             injectToy(R0, '巴斯殼', 20, 39, C_Pixar);
 
             const R1 = buildShelf(cabR, '第1層', 70, 35);
-            injectToy(R1, '戴歐尼', 12.7, 27.9, C_Pixar);
-            injectToy(R1, '阿芙', 8.9, 15.2, C_Pixar);
+            injectToy(R1, '戴歐尼修斯', 12.7, 27.9, C_Pixar);
+            injectToy(R1, '阿芙蘿黛蒂', 8.9, 15.2, C_Pixar);
 
             const R2 = buildShelf(cabR, '第2層', 70, 35);
             injectToy(R2, 'Gantz', 10, 25, C_Anime);
@@ -685,22 +801,21 @@
             injectToy(R3, '黑魔女', 19.1, 22.2, C_Ghibli);
             injectToy(R3, '苦力怕', 10, 23, C_Lego);
 
-            const R4 = buildShelf(cabR, '第4層', 70, 25);
-            injectToy(R4, 'SA', 11, 18.9, C_LOTR);
-            injectToy(R4, 'BO', 9.5, 18.5, C_LOTR);
-            injectToy(R4, 'GO', 9, 8, C_LOTR);
-            injectToy(R4, 'SR', 7.6, 14.7, C_LOTR);
-            injectToy(R4, 'AL', 8.5, 12, C_LOTR);
+            const R4 = buildShelf(cabR, '第4層 (淺)', 70, 25);
+            injectToy(R4, 'SARUMAN', 11, 18.9, C_LOTR);
+            injectToy(R4, 'BOROMIR', 9.5, 18.5, C_LOTR);
+            injectToy(R4, 'GOLLUM', 9, 8, C_LOTR);
+            injectToy(R4, 'SARAH', 7.6, 14.7, C_LOTR);
+            injectToy(R4, 'ALITA', 8.5, 12, C_LOTR);
 
-            const R5 = buildShelf(cabR, '第5層', 70, 20);
+            const R5 = buildShelf(cabR, '第5層 (淺)', 70, 20);
             injectToy(R5, '開司', 14, 14, C_Anime);
             injectToy(R5, '黑魔', 10, 13, C_Anime);
-            injectToy(R5, '賽', 8, 14, C_Anime);
+            injectToy(R5, '賽車', 8, 14, C_Anime);
             injectToy(R5, '信長', 13, 12, C_Anime);
 
-            const R6 = buildShelf(cabR, '頂層', 70, 40);
+            buildShelf(cabR, '頂層擴充區', 70, 40);
 
-            // 觸發綁定事件
             setTimeout(() => window.rebindAllEvents(), 100);
         })();
     </script>
