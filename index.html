@@ -117,36 +117,6 @@
         <!-- 畫布容器 -->
         <div id="cabinet-canvas" class="flex gap-8 items-end min-w-max pb-20 pt-10">
             
-            <!-- 初始左區櫃體 -->
-            <div class="cabinet-col group flex flex-col gap-2" data-w="70">
-                <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative">
-                    <button onclick="deleteCabinet(this)" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="刪除整個櫃體">✖</button>
-                    <h2 class="text-lg font-bold text-gray-200 tracking-widest cabinet-name">【 左 區 】</h2>
-                    <p class="text-xs text-amber-500 font-medium mt-1">內徑寬 70cm</p>
-                    <button onclick="openAddShelfModal(this)" class="mt-2 text-[10px] bg-amber-700/50 hover:bg-amber-600 text-white px-2 py-1 rounded transition-colors w-full border border-amber-600/50">+ 新增層板</button>
-                </div>
-                
-                <div class="shelf-container flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl border-b-[16px] border-b-[#3d2b1f] justify-end">
-                    <!-- 第2層 -->
-                    <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f] group/shelf" 
-                         style="width: 280px; height: 140px;" data-name="左區-層板A" data-max-w="70" data-max-h="35">
-                        <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">高35 (示範)</span>
-                        <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
-                        <div class="toy-block draggable bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 84px; height: 30.8px;" draggable="true" data-name="龍貓" data-w="21" data-h="7.7" data-info="龍貓<br>寬: 21 cm / 高: 7.7 cm">龍貓</div>
-                        <div class="toy-block draggable bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30px; height: 72px;" draggable="true" data-name="HELLFIRE EDDIE" data-w="7.5" data-h="18" data-info="HELLFIRE EDDIE<br>寬: 7.5 cm / 高: 18 cm">HE</div>
-                    </div>
-                    <!-- 底層 -->
-                    <div class="shelf-bg dropzone relative flex items-end group/shelf" 
-                         style="width: 280px; height: 260px;" data-name="左區-底層落地" data-max-w="70" data-max-h="65">
-                        <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">落地 高65 (示範)</span>
-                        <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
-                        <div class="toy-block draggable bg-sky-700/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 132px; height: 164px;" draggable="true" data-name="超大巴斯存錢筒" data-w="33" data-h="41" data-info="超大巴斯存錢筒<br>寬: 33 cm / 高: 41 cm">
-                            <span>超大巴斯</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- 新增櫃體大按鈕 -->
             <div class="flex items-center h-full pb-4">
                 <button onclick="openAddCabinetModal()" class="w-16 h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
@@ -397,6 +367,24 @@
 
         // ================== 新增與刪除物件邏輯 ==================
         
+        // 刪除個別玩具 (退回暫存或徹底刪除)
+        window.deleteToy = function(event, btn) {
+            event.stopPropagation();
+            const toy = btn.closest('.toy-block');
+            const staging = document.getElementById('staging-area');
+            const tooltip = document.getElementById('tooltip');
+            if(tooltip) tooltip.classList.remove('visible'); // 隱藏提示框
+
+            if (toy.parentElement === staging) {
+                toy.remove();
+                showToast('玩具已從暫存區徹底刪除！');
+            } else {
+                staging.appendChild(toy);
+                showToast('玩具已移回暫存區！');
+            }
+            window.rebindAllEvents();
+        };
+
         // 玩具元件
         window.openAddToyModal = () => {
             document.getElementById('add-toy-modal').classList.remove('hidden');
@@ -426,7 +414,12 @@
             newToy.setAttribute('data-w', w);
             newToy.setAttribute('data-h', h);
             newToy.setAttribute('data-info', `${name}<br>寬: ${w} cm / 高: ${h} cm`);
-            newToy.innerHTML = name.length > 5 ? name.substring(0, 4) + '..' : name;
+            
+            const shortName = name.length > 5 ? name.substring(0, 4) + '..' : name;
+            newToy.innerHTML = `
+                <button onclick="deleteToy(event, this)" class="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 group-hover/toy:opacity-100 transition-opacity z-50 shadow-md">✖</button>
+                <span class="pointer-events-none truncate w-full px-1">${shortName}</span>
+            `;
 
             document.getElementById('staging-area').appendChild(newToy);
             window.rebindAllEvents();
@@ -577,6 +570,101 @@
             document.execCommand('copy');
             showToast('原始碼已複製到剪貼簿！');
         };
+    </script>
+    
+    <!-- 自動初始化原本規劃的 54 件玩具與 3 面櫃體 -->
+    <script id="init-toys">
+        (function() {
+            const canvas = document.getElementById('cabinet-canvas');
+            // 檢查是否為初始空狀態 (避免匯出後重複執行)
+            if (canvas && canvas.querySelectorAll('.cabinet-col').length === 0) {
+                const addBtn = canvas.querySelector('div.flex.items-center.h-full');
+                canvas.innerHTML = '';
+                
+                const layoutData = [
+                    {
+                        name: "左區", w: 70, shelves: [
+                            { name: "第五層(吉卜力)", h: 20, toys: [ {n:"龍貓", w:21, h:7.7, c:"#8fbc8f"}, {n:"小千", w:21, h:7.7, c:"#8fbc8f"} ] },
+                            { name: "第四層(怪奇)", h: 25, toys: [ {n:"ELEVEN", w:7, h:14.7, c:"#dda0dd"}, {n:"HELLFIRE", w:7.5, h:18, c:"#dda0dd"}, {n:"DUSTIN", w:7.1, h:14.2, c:"#dda0dd"}, {n:"ROCKSTAR", w:10.5, h:15.6, c:"#dda0dd"}, {n:"VECNA", w:8.5, h:16.6, c:"#dda0dd"}, {n:"DEMOGORGON", w:10.9, h:16.6, c:"#dda0dd"}, {n:"DEMOGORGON2", w:10.9, h:16.6, c:"#dda0dd"} ] },
+                            { name: "第三層(巴斯)", h: 35, toys: [ {n:"巴斯電子", w:23, h:28, c:"#6b7280"}, {n:"巴斯一番", w:19, h:26, c:"#6b7280"} ] },
+                            { name: "第二層(出包)", h: 35, toys: [ {n:"闇兔女", w:10.5, h:26, c:"#f472b6"}, {n:"闇牛仔褲", w:9.5, h:22, c:"#f472b6"}, {n:"桃子泳裝", w:10, h:24, c:"#f472b6"} ] },
+                            { name: "第一層(魔戒)", h: 35, toys: [ {n:"ARAGORN", w:20, h:28, c:"#eab308"}, {n:"LURTZ", w:22.3, h:25.2, c:"#eab308"}, {n:"戒靈小", w:11.5, h:15, c:"#eab308"} ] },
+                            { name: "底層(皮克斯)", h: 65, toys: [ {n:"巴斯大存錢筒", w:33, h:41, c:"#6b7280"}, {n:"佐格", w:25, h:40, c:"#6b7280"} ] }
+                        ]
+                    },
+                    {
+                        name: "中區", w: 70, shelves: [
+                            { name: "第五層(搞怪)", h: 20, toys: [ {n:"Pickle", w:7.6, h:15.2, c:"#f87171"}, {n:"Pickle(s)", w:6.4, h:9.5, c:"#f87171"}, {n:"超人與狗", w:10, h:16, c:"#f87171"}, {n:"ELLO", w:7.5, h:11, c:"#f87171"} ] },
+                            { name: "第四層(異形)", h: 25, toys: [ {n:"SLIMER", w:8, h:16.4, c:"#dda0dd"}, {n:"S.VENKMAN", w:9.1, h:17.2, c:"#dda0dd"}, {n:"EGON", w:10.5, h:17.6, c:"#dda0dd"}, {n:"FACEHUGGER", w:13.5, h:15, c:"#dda0dd"} ] },
+                            { name: "第三層(樂高)", h: 35, toys: [ {n:"綠惡魔樂高", w:24, h:26, c:"#14b8a6"}, {n:"蜘蛛人(側)", w:16, h:17, c:"#14b8a6"} ] },
+                            { name: "第二層(偶像)", h: 35, toys: [ {n:"初音NT", w:22, h:22, c:"#38bdf8"}, {n:"涼宮兔女", w:9.5, h:24, c:"#f472b6"}, {n:"白雪公主", w:9.5, h:19, c:"#f472b6"} ] },
+                            { name: "第一層(暗黑)", h: 35, toys: [ {n:"SARUMAN大", w:22.8, h:25.7, c:"#eab308"}, {n:"烙印手", w:15, h:25, c:"#eab308"}, {n:"烙印骷髏", w:12, h:20, c:"#eab308"}, {n:"巴風特", w:14.6, h:25.4, c:"#eab308"} ] },
+                            { name: "底層(恐懼)", h: 65, toys: [ {n:"THE JOKER", w:39, h:50, c:"#f87171"}, {n:"魔多戒靈", w:23.5, h:46, c:"#eab308"} ] }
+                        ]
+                    },
+                    {
+                        name: "右區", w: 70, shelves: [
+                            { name: "第五層(動漫)", h: 20, toys: [ {n:"開司", w:14, h:14, c:"#38bdf8"}, {n:"黑魔導", w:10, h:13, c:"#38bdf8"}, {n:"賽車小公主", w:8, h:14, c:"#38bdf8"}, {n:"信長", w:13, h:12, c:"#38bdf8"} ] },
+                            { name: "第四層(經典)", h: 25, toys: [ {n:"SARUMAN", w:11, h:18.9, c:"#eab308"}, {n:"BOROMIR", w:9.5, h:18.5, c:"#eab308"}, {n:"GOLLUM", w:9, h:8, c:"#eab308"}, {n:"SARAH", w:7.6, h:14.7, c:"#eab308"}, {n:"ALITA", w:8.5, h:12, c:"#eab308"} ] },
+                            { name: "第三層(奇幻)", h: 35, toys: [ {n:"黑魔女", w:19.05, h:22.2, c:"#8fbc8f"}, {n:"苦力怕樂高", w:10, h:23, c:"#14b8a6"} ] },
+                            { name: "第二層(冒險)", h: 35, toys: [ {n:"Gantz", w:10, h:25, c:"#38bdf8"}, {n:"狼與香料", w:14, h:24, c:"#38bdf8"} ] },
+                            { name: "第一層(神話)", h: 35, toys: [ {n:"戴歐尼修斯", w:12.7, h:27.9, c:"#6b7280"}, {n:"阿芙蘿黛蒂", w:8.9, h:15.2, c:"#6b7280"} ] },
+                            { name: "底層(遺骸)", h: 65, toys: [ {n:"JARETH", w:30.5, h:57.5, c:"#f87171"}, {n:"巴斯純殼", w:20, h:39, c:"#6b7280"} ] }
+                        ]
+                    }
+                ];
+
+                layoutData.forEach(cab => {
+                    const col = document.createElement('div');
+                    col.className = 'cabinet-col group flex flex-col gap-2';
+                    col.setAttribute('data-w', cab.w);
+                    
+                    let shelvesHTML = '';
+                    cab.shelves.forEach(shelf => {
+                        let toysHTML = '';
+                        shelf.toys.forEach(toy => {
+                            const shortName = toy.n.length > 5 ? toy.n.substring(0, 4) + '..' : toy.n;
+                            toysHTML += `
+                                <div class="toy-block draggable text-white text-[11px] font-bold flex flex-col items-center justify-center leading-tight text-center relative group/toy" 
+                                     style="background-color: ${toy.c}; width: ${toy.w * 4}px; height: ${toy.h * 4}px;" 
+                                     draggable="true" data-name="${toy.n}" data-w="${toy.w}" data-h="${toy.h}" data-info="${toy.n}<br>寬: ${toy.w} cm / 高: ${toy.h} cm">
+                                    <button onclick="deleteToy(event, this)" class="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 group-hover/toy:opacity-100 transition-opacity z-50 shadow-md">✖</button>
+                                    <span class="pointer-events-none truncate w-full px-1">${shortName}</span>
+                                </div>
+                            `;
+                        });
+                        
+                        shelvesHTML = `
+                            <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f] group/shelf" 
+                                 style="width: ${cab.w * 4}px; height: ${shelf.h * 4}px;" data-name="${cab.name}-${shelf.name}" data-max-w="${cab.w}" data-max-h="${shelf.h}">
+                                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">${shelf.name} (高${shelf.h})</span>
+                                <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
+                                ${toysHTML}
+                            </div>
+                        ` + shelvesHTML;
+                    });
+
+                    col.innerHTML = `
+                        <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative">
+                            <button onclick="deleteCabinet(this)" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="刪除整個櫃體">✖</button>
+                            <h2 class="text-lg font-bold text-gray-200 tracking-widest cabinet-name">${cab.name}</h2>
+                            <p class="text-xs text-amber-500 font-medium mt-1">內徑寬 ${cab.w}cm</p>
+                            <button onclick="openAddShelfModal(this)" class="mt-2 text-[10px] bg-amber-700/50 hover:bg-amber-600 text-white px-2 py-1 rounded transition-colors w-full border border-amber-600/50">+ 新增層板</button>
+                        </div>
+                        <div class="shelf-container flex flex-col bg-[#222] border-x-[12px] border-[#4a3424] rounded-sm shadow-2xl border-b-[16px] border-b-[#3d2b1f] justify-end min-h-[100px]">
+                            ${shelvesHTML}
+                        </div>
+                    `;
+                    canvas.appendChild(col);
+                });
+                
+                if(addBtn) canvas.appendChild(addBtn);
+                window.rebindAllEvents();
+            }
+            // 執行後刪除此腳本，防止匯出 HTML 時重複執行
+            const scriptEl = document.getElementById('init-toys');
+            if (scriptEl) scriptEl.remove();
+        })();
     </script>
 </body>
 </html>
