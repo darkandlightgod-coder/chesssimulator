@@ -91,6 +91,25 @@
             <span class="inline-block mt-2 px-3 py-1 bg-gray-800 rounded-full border border-gray-700 text-amber-300 animate-pulse">✨ 全新功能：您可以按住滑鼠「拖曳」任何玩具到其他格子中！系統會自動驗證空間是否足夠。</span><br>
             <span class="text-emerald-400 mt-2 block">將游標停留在色塊上可查看詳細尺寸。</span>
         </p>
+
+        <div class="mt-6 flex flex-wrap justify-center gap-4">
+            <button onclick="openAddToyModal()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                新增專屬玩具
+            </button>
+            <button id="save-btn" onclick="saveLayout()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform transform hover:scale-105 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                儲存當前配置
+            </button>
+        </div>
+    </div>
+
+    <!-- 暫存庫存區 (無限制大小) -->
+    <div class="w-full max-w-7xl bg-[#2a221c] border-2 border-dashed border-[#5e412f] rounded-xl p-4 mb-8 shadow-inner">
+        <h3 class="text-amber-500/80 font-bold text-sm tracking-widest mb-3">📥 暫存庫存區 (無尺寸限制，新建立或取下的玩具請放此)</h3>
+        <div id="staging-area" class="dropzone flex flex-wrap gap-3 min-h-[100px] items-end p-3 bg-black/30 rounded-lg" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999">
+            <!-- 新增的玩具會先產生在這裡 -->
+        </div>
     </div>
 
     <!-- 系統櫃本體容器 -->
@@ -310,6 +329,42 @@
     <!-- 懸停提示框 DOM 元件 -->
     <div id="tooltip" class="fixed z-[100] bg-gray-900 text-white border border-amber-500/50 rounded shadow-xl px-4 py-2 text-sm text-center"></div>
 
+    <!-- 新增玩具彈出視窗 (Modal) -->
+    <div id="add-toy-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 class="text-xl font-bold text-amber-500 mb-4">✨ 新增專屬玩具</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">玩具名稱</label>
+                    <input type="text" id="new-toy-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="例如: 巨大哥吉拉">
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-1/2">
+                        <label class="block text-gray-300 text-sm font-bold mb-1">面寬 (cm)</label>
+                        <input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="10">
+                    </div>
+                    <div class="w-1/2">
+                        <label class="block text-gray-300 text-sm font-bold mb-1">高度 (cm)</label>
+                        <input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-amber-500" placeholder="20">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-300 text-sm font-bold mb-1">顯示顏色</label>
+                    <input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#10b981">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeAddToyModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors">取消</button>
+                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded transition-colors">確認新增</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系統訊息通知 (Toast) -->
+    <div id="toast-msg" class="fixed bottom-5 right-5 z-[1000] text-white px-6 py-3 rounded-lg shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none hidden">
+        成功！
+    </div>
+
     <!-- 錯誤提示彈出視窗 (Modal) -->
     <div id="error-modal" class="fixed inset-0 z-[999] bg-black/60 hidden items-center justify-center backdrop-blur-sm">
         <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl transform scale-100 transition-all">
@@ -326,71 +381,163 @@
         </div>
     </div>
 
-    <script>
-        // ------------------ Tooltip 邏輯 ------------------
-        const tooltip = document.getElementById('tooltip');
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'standalone-cabinet-app';
+        let db, auth, currentUserId;
         
-        document.querySelectorAll('.toy-block').forEach(block => {
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                initAuth();
+            }
+        } catch (e) {
+            console.log("Firebase 尚未配置。");
+        }
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                currentUserId = auth.currentUser?.uid;
+                if (currentUserId) loadLayout();
+            } catch (error) {
+                console.error("Auth init failed:", error);
+            }
+        }
+
+        // 綁定儲存功能到全域供 HTML onClick 使用
+        window.saveLayout = async function() {
+            const btn = document.getElementById('save-btn');
+            btn.innerHTML = '<svg class="animate-spin w-5 h-5 mr-2" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 儲存中...';
+            
+            const layoutData = {};
+            // 掃描包含暫存區在內的所有區域
+            document.querySelectorAll('.dropzone').forEach((zone, index) => {
+                const zoneId = zone.id || 'zone_' + index; 
+                if (!zone.id) zone.id = zoneId;
+                
+                const items = [];
+                zone.querySelectorAll('.toy-block').forEach(item => {
+                    items.push({
+                        name: item.getAttribute('data-name'),
+                        w: item.getAttribute('data-w'),
+                        h: item.getAttribute('data-h'),
+                        info: item.getAttribute('data-info'),
+                        inlineStyle: item.style.cssText,
+                        className: item.className,
+                        innerHTML: item.innerHTML
+                    });
+                });
+                layoutData[zoneId] = items;
+            });
+
+            if (db && currentUserId) {
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'layouts', 'current');
+                    await setDoc(docRef, { data: JSON.stringify(layoutData), timestamp: new Date() });
+                    window.showToast("配置已成功儲存至雲端！");
+                } catch (e) {
+                    window.showToast("儲存失敗，請確認網路連線。", true);
+                }
+            } else {
+                window.showToast("目前為離線預覽模式，無法儲存至雲端。", true);
+            }
+
+            btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> 儲存當前配置';
+        };
+
+        // 載入先前的存檔
+        async function loadLayout() {
+            if (!db || !currentUserId) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'layouts', 'current');
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                    const layoutData = JSON.parse(snap.data().data);
+                    // 清空現有玩具
+                    document.querySelectorAll('.toy-block').forEach(el => el.remove());
+
+                    // 重建玩具
+                    Object.keys(layoutData).forEach(zoneId => {
+                        const zone = document.getElementById(zoneId) || document.querySelectorAll('.dropzone')[parseInt(zoneId.replace('zone_', ''))];
+                        if (zone) {
+                            layoutData[zoneId].forEach(itemData => {
+                                const newToy = document.createElement('div');
+                                newToy.className = itemData.className;
+                                newToy.style.cssText = itemData.inlineStyle;
+                                newToy.setAttribute('draggable', 'true');
+                                newToy.setAttribute('data-name', itemData.name);
+                                newToy.setAttribute('data-w', itemData.w);
+                                newToy.setAttribute('data-h', itemData.h);
+                                newToy.setAttribute('data-info', itemData.info);
+                                newToy.innerHTML = itemData.innerHTML;
+                                
+                                window.attachToyEvents(newToy);
+                                zone.appendChild(newToy);
+                            });
+                        }
+                    });
+                    window.showToast("已成功載入您上次儲存的配置！");
+                }
+            } catch (e) { console.error(e); }
+        }
+    </script>
+
+    <script>
+        const tooltip = document.getElementById('tooltip');
+        window.draggedItem = null;
+        
+        // 模組化：為玩具綁定互動事件 (供初始載入與新建玩具使用)
+        window.attachToyEvents = function(block) {
             block.addEventListener('mouseenter', (e) => {
                 if(block.classList.contains('dragging')) return;
-                tooltip.innerHTML = e.target.getAttribute('data-info');
+                tooltip.innerHTML = block.getAttribute('data-info');
                 tooltip.classList.add('visible');
-                updateTooltipPosition(e);
+                tooltip.style.left = e.clientX + 'px';
+                tooltip.style.top = e.clientY + 'px';
             });
             
             block.addEventListener('mousemove', (e) => {
-                updateTooltipPosition(e);
+                tooltip.style.left = e.clientX + 'px';
+                tooltip.style.top = e.clientY + 'px';
             });
             
             block.addEventListener('mouseleave', () => {
                 tooltip.classList.remove('visible');
             });
-        });
 
-        function updateTooltipPosition(e) {
-            tooltip.style.left = e.clientX + 'px';
-            tooltip.style.top = e.clientY + 'px';
-        }
+            block.addEventListener('dragstart', (e) => {
+                window.draggedItem = block;
+                tooltip.classList.remove('visible');
+                setTimeout(() => block.classList.add('dragging'), 0);
+            });
 
-        // ------------------ Error Modal 邏輯 ------------------
-        const errorModal = document.getElementById('error-modal');
-        const errorMessage = document.getElementById('error-message');
+            block.addEventListener('dragend', () => {
+                block.classList.remove('dragging');
+                window.draggedItem = null;
+                document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
+            });
+        };
 
-        function showErrorModal(msg) {
-            errorMessage.innerHTML = msg;
-            errorModal.classList.remove('hidden');
-            errorModal.classList.add('flex');
-        }
+        // 綁定頁面上預設的所有玩具
+        document.querySelectorAll('.toy-block').forEach(window.attachToyEvents);
 
-        function closeErrorModal() {
-            errorModal.classList.add('hidden');
-            errorModal.classList.remove('flex');
-        }
-
-        // ------------------ Drag & Drop (拖曳) 邏輯 ------------------
-        const draggables = document.querySelectorAll('.draggable');
+        // Dropzone 放置與驗證邏輯
         const dropzones = document.querySelectorAll('.dropzone');
-        let draggedItem = null;
+        dropzones.forEach((dropzone, index) => {
+            // 給予ID以利存檔定位
+            if(!dropzone.id) dropzone.id = 'zone_' + index;
 
-        draggables.forEach(draggable => {
-            draggable.addEventListener('dragstart', (e) => {
-                draggedItem = draggable;
-                tooltip.classList.remove('visible'); // 拖曳時隱藏提示
-                // 使用 setTimeout 讓原始方塊在拖曳時變半透明，但滑鼠上的殘影保持正常
-                setTimeout(() => {
-                    draggable.classList.add('dragging');
-                }, 0);
-            });
-
-            draggable.addEventListener('dragend', () => {
-                draggable.classList.remove('dragging');
-                draggedItem = null;
-                dropzones.forEach(dz => dz.classList.remove('drag-over'));
-            });
-        });
-
-        dropzones.forEach(dropzone => {
-            // 允許放置
             dropzone.addEventListener('dragover', (e) => {
                 e.preventDefault(); 
                 dropzone.classList.add('drag-over');
@@ -400,35 +547,30 @@
                 dropzone.classList.remove('drag-over');
             });
 
-            // 處理放置邏輯與驗證
             dropzone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 dropzone.classList.remove('drag-over');
                 
-                if (!draggedItem) return;
+                if (!window.draggedItem) return;
+                if (dropzone === window.draggedItem.parentElement) return; 
 
-                // 若放在同一格，則不驗證直接返回 (可擴充為排序，此處為簡化)
-                if (dropzone === draggedItem.parentElement) return;
-
-                // 取得目標層板的限制資料
-                const maxW = parseFloat(dropzone.getAttribute('data-max-w'));
-                const maxH = parseFloat(dropzone.getAttribute('data-max-h'));
+                // 取得目標限制
+                const maxW = parseFloat(dropzone.getAttribute('data-max-w')) || 9999;
+                const maxH = parseFloat(dropzone.getAttribute('data-max-h')) || 9999;
                 const zoneName = dropzone.getAttribute('data-name');
                 
-                // 取得拖曳物件的實體資料
-                const itemW = parseFloat(draggedItem.getAttribute('data-w'));
-                const itemH = parseFloat(draggedItem.getAttribute('data-h'));
-                const itemName = draggedItem.getAttribute('data-name');
+                const itemW = parseFloat(window.draggedItem.getAttribute('data-w'));
+                const itemH = parseFloat(window.draggedItem.getAttribute('data-h'));
+                const itemName = window.draggedItem.getAttribute('data-name');
 
-                // 1. 驗證高度 (Height Validation)
+                // 驗證高度
                 if (itemH > maxH) {
                     showErrorModal(`【高度不足】<br>「${itemName}」高度為 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制僅 <b>${maxH}</b> cm<br><br>無法放入！高度超出了 <span class="text-red-400 font-bold text-xl">${(itemH - maxH).toFixed(1)}</span> cm`);
                     return;
                 }
 
-                // 2. 驗證寬度 (Width Validation)
-                // 計算目前該層已使用的總寬度 (排除正在拖曳的物件本身)
-                const currentItems = Array.from(dropzone.querySelectorAll('.draggable'));
+                // 驗證寬度
+                const currentItems = Array.from(dropzone.querySelectorAll('.toy-block'));
                 const currentUsedW = currentItems.reduce((sum, item) => sum + parseFloat(item.getAttribute('data-w')), 0);
                 const remainingW = maxW - currentUsedW;
 
@@ -437,10 +579,88 @@
                     return;
                 }
 
-                // 驗證全數通過，將物件移動到新層板中！
-                dropzone.appendChild(draggedItem);
+                // 驗證通過，移入新層板
+                dropzone.appendChild(window.draggedItem);
             });
         });
+
+        // Modal 視窗邏輯
+        const addToyModal = document.getElementById('add-toy-modal');
+        const errorModal = document.getElementById('error-modal');
+        const errorMessage = document.getElementById('error-message');
+
+        window.openAddToyModal = function() {
+            addToyModal.classList.remove('hidden');
+            addToyModal.classList.add('flex');
+        };
+
+        window.closeAddToyModal = function() {
+            addToyModal.classList.add('hidden');
+            addToyModal.classList.remove('flex');
+            document.getElementById('new-toy-name').value = '';
+            document.getElementById('new-toy-w').value = '';
+            document.getElementById('new-toy-h').value = '';
+        };
+
+        window.showErrorModal = function(msg) {
+            errorMessage.innerHTML = msg;
+            errorModal.classList.remove('hidden');
+            errorModal.classList.add('flex');
+        };
+
+        window.closeErrorModal = function() {
+            errorModal.classList.add('hidden');
+            errorModal.classList.remove('flex');
+        };
+
+        // 新增玩具建立邏輯
+        window.createNewToy = function() {
+            const name = document.getElementById('new-toy-name').value.trim();
+            const w = parseFloat(document.getElementById('new-toy-w').value);
+            const h = parseFloat(document.getElementById('new-toy-h').value);
+            const color = document.getElementById('new-toy-color').value;
+
+            if (!name || isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+                showErrorModal("請填寫完整的玩具名稱與長高數值（須為大於 0 的數字）！");
+                return;
+            }
+
+            const pxW = w * 4;
+            const pxH = h * 4;
+
+            const newToy = document.createElement('div');
+            newToy.className = `toy-block draggable text-white text-[11px] font-bold flex flex-col items-center justify-center leading-tight text-center`;
+            newToy.style.backgroundColor = color;
+            newToy.style.width = pxW + 'px';
+            newToy.style.height = pxH + 'px';
+            
+            newToy.setAttribute('draggable', 'true');
+            newToy.setAttribute('data-name', name);
+            newToy.setAttribute('data-w', w);
+            newToy.setAttribute('data-h', h);
+            newToy.setAttribute('data-info', `${name}<br>寬: ${w} cm / 高: ${h} cm`);
+            
+            newToy.innerHTML = name.length > 5 ? name.substring(0, 4) + '..' : name;
+
+            window.attachToyEvents(newToy);
+            document.getElementById('staging-area').appendChild(newToy);
+            
+            closeAddToyModal();
+            window.showToast('已成功新增玩具至暫存庫存區！');
+        };
+
+        window.showToast = function(msg, isError = false) {
+            const toast = document.getElementById('toast-msg');
+            toast.textContent = msg;
+            toast.className = `fixed bottom-5 right-5 z-[1000] text-white px-6 py-3 rounded-lg shadow-xl transition-opacity duration-300 ${isError ? 'bg-red-600' : 'bg-emerald-600'}`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.remove('opacity-0'), 10);
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.classList.add('hidden'), 300);
+            }, 3000);
+        };
     </script>
 </body>
 </html>
