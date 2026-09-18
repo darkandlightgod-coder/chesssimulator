@@ -628,24 +628,25 @@
                                 <div class="toy-block draggable text-white text-[11px] font-bold flex flex-col items-center justify-center leading-tight text-center relative group/toy" 
                                      style="background-color: ${toy.c}; width: ${toy.w * 4}px; height: ${toy.h * 4}px;" 
                                      draggable="true" data-name="${toy.n}" data-w="${toy.w}" data-h="${toy.h}" data-info="${toy.n}<br>寬: ${toy.w} cm / 高: ${toy.h} cm">
-                                    <button onclick="deleteToy(event, this)" class="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 group-hover/toy:opacity-100 transition-opacity z-50 shadow-md">✖</button>
+                                    <button onclick="deleteToy(event, this)" class="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 group-hover/toy:opacity-100 transition-opacity z-50 shadow-md" title="移回暫存區">✖</button>
                                     <span class="pointer-events-none truncate w-full px-1">${shortName}</span>
                                 </div>
                             `;
                         });
                         
-                        shelvesHTML = `
+                        // 修正：改用 += 累加，讓陣列順序（第五層在最上、底層在最下）自然對應 DOM 順序
+                        shelvesHTML += `
                             <div class="shelf-bg dropzone relative flex items-end border-b-[8px] border-[#5e412f] group/shelf" 
                                  style="width: ${cab.w * 4}px; height: ${shelf.h * 4}px;" data-name="${cab.name}-${shelf.name}" data-max-w="${cab.w}" data-max-h="${shelf.h}">
                                 <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">${shelf.name} (高${shelf.h})</span>
                                 <button onclick="deleteShelf(this)" class="absolute top-1 right-1 text-gray-500 hover:text-red-500 opacity-0 group-hover/shelf:opacity-100 transition-opacity p-1 z-[60]" title="刪除此層板">✖</button>
                                 ${toysHTML}
                             </div>
-                        ` + shelvesHTML;
+                        `;
                     });
 
                     col.innerHTML = `
-                        <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative">
+                        <div class="text-center bg-[#222] border border-[#4a3424] rounded p-2 shadow-inner relative group">
                             <button onclick="deleteCabinet(this)" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="刪除整個櫃體">✖</button>
                             <h2 class="text-lg font-bold text-gray-200 tracking-widest cabinet-name">${cab.name}</h2>
                             <p class="text-xs text-amber-500 font-medium mt-1">內徑寬 ${cab.w}cm</p>
