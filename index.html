@@ -3,10 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>系統櫃 1:1 高擬真驗證與拖曳沙盤</title>
+    <title>系統櫃 1:1 高擬真驗證與 3D 拖曳沙盤</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
-        :root { --scale: 4px; /* 1cm = 4px */ }
+        :root { --scale: 4px; /* 1cm = 4px (2D顯示比例) */ }
         
         body {
             background-color: #121212;
@@ -14,21 +16,28 @@
             font-family: 'Inter', 'Microsoft JhengHei', sans-serif;
             margin: 0;
             overscroll-behavior: none;
+            touch-action: none; /* 防止手機瀏覽器預設滑動干擾拖曳 */
         }
 
-        /* 修正重力：讓內容物絕對靠下 */
+        /* 隱藏捲軸但保留滾動功能 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #777; }
+
         .shelf-bg {
             background-image: 
                 linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-            background-size: 20px 20px; /* 5cm grid */
+            background-size: 20px 20px; 
             background-position: bottom left;
             transition: background-color 0.2s ease, box-shadow 0.2s ease;
             display: flex;
             flex-wrap: wrap; 
-            align-items: flex-end; 
+            align-items: flex-end; /* 地球引力向下對齊 */
             align-content: flex-end;
             cursor: pointer;
+            box-sizing: border-box;
         }
 
         .shelf-bg.drag-over, .staging-bg.drag-over {
@@ -36,7 +45,6 @@
             box-shadow: inset 0 0 20px rgba(245, 158, 11, 0.6);
         }
 
-        /* 拖曳調整高度的控制把手 */
         .resize-handle {
             position: absolute;
             top: -5px;
@@ -47,9 +55,7 @@
             z-index: 30;
             transition: background-color 0.2s;
         }
-        .resize-handle:hover {
-            background-color: rgba(245, 158, 11, 0.4);
-        }
+        .resize-handle:hover { background-color: rgba(245, 158, 11, 0.4); }
 
         .toy-block {
             transition: transform 0.1s ease-in-out, filter 0.2s;
@@ -59,6 +65,8 @@
             touch-action: none; 
             position: relative;
             background-repeat: no-repeat;
+            background-size: cover;
+            background-position: center;
         }
         
         @media (hover: hover) {
@@ -69,7 +77,6 @@
                 z-index: 10;
             }
         }
-
         .toy-block:active { cursor: grabbing; }
         .toy-block.dragging {
             opacity: 0.5;
@@ -78,168 +85,215 @@
             z-index: 50;
         }
 
-        .cabinet-action-btn { opacity: 0; transition: opacity 0.2s; }
-        .cabinet-group:hover .cabinet-action-btn { opacity: 1; }
-
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1a1a1a; }
-        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #777; }
+        /* 3D 畫布容器 */
+        #three-container {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: #000;
+            z-index: 9999;
+            display: none;
+        }
+        #three-close-btn {
+            position: absolute;
+            top: 20px; right: 20px;
+            z-index: 10000;
+        }
+        #three-ui-overlay {
+            position: absolute;
+            bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            color: #aaa;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 10000;
+        }
     </style>
 </head>
-<body class="flex flex-col md:flex-row h-screen w-full overflow-hidden">
+<body class="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden">
 
-    <!-- 隱藏的圖片上傳器 -->
+    <!-- 隱藏資源 -->
     <input type="file" id="image-uploader" accept="image/*" class="hidden">
 
-    <!-- =================== 左側/上方面板 (響應式) =================== -->
     <div class="w-full md:w-80 lg:w-96 flex flex-col h-[40vh] md:h-full flex-shrink-0 z-20 shadow-[0_5px_15px_rgba(0,0,0,0.5)] md:shadow-[5px_0_15px_rgba(0,0,0,0.5)] bg-[#1e1814] border-b-4 md:border-b-0 md:border-r-4 border-[#3d2b1f]">
         <div class="p-3 md:p-5 border-b border-[#3d2b1f] bg-[#16120f] flex-shrink-0">
-            <h1 class="text-base md:text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-sm md:text-lg">1:1 絕對比例沙盤</span></h1>
+            <h1 class="text-base md:text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-sm md:text-lg">1:1 絕對比例 3D 沙盤</span></h1>
             <p class="hidden md:block text-gray-400 text-xs mb-3 leading-relaxed">
-                <strong class="text-amber-400">滑鼠連點兩下 (雙擊) 玩具或層板即可叫出控制選單！</strong><br>
-                按住層板上緣可拖曳修改高度，手指按住公仔可直接拖曳。
+                <strong class="text-amber-400">雙擊 (連點兩下)</strong> 玩具、層板或<strong class="text-amber-400">櫃體標題</strong>，可開啟設定選單。<br>
+                拖曳層板頂部可微調高度，手指長按玩具即可拖移。
             </p>
-            <div class="flex flex-row md:flex-col gap-2 md:gap-3">
-                <button onclick="openModal('add-toy-modal')" class="flex-1 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-1 md:gap-2">
-                    <svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    新增玩具
-                </button>
-                <button onclick="openModal('export-modal')" class="flex-1 py-1.5 md:py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs md:text-sm rounded shadow-lg transition-colors flex items-center justify-center gap-1 md:gap-2">
-                    <svg class="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    匯出存檔
-                </button>
+            <div class="grid grid-cols-2 gap-2 md:gap-3 mb-2">
+                <button onclick="openModal('add-toy-modal')" class="py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded shadow-lg transition-colors">➕ 新增玩具</button>
+                <button onclick="openModal('export-modal')" class="py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded shadow-lg transition-colors">💾 匯出存檔</button>
             </div>
+            <!-- 3D 轉換按鈕 -->
+            <button onclick="generate3DScene()" class="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm md:text-base rounded-lg shadow-[0_0_15px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 border border-purple-400/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                一鍵轉換 3D 實境
+            </button>
         </div>
-        <div class="flex-1 p-3 md:p-4 overflow-y-auto flex flex-col min-h-0">
-            <h3 class="text-amber-500/80 font-bold text-xs tracking-widest mb-2 md:mb-3 flex items-center gap-2 flex-shrink-0">
-                📥 暫存庫存區 <span class="text-[10px] text-gray-500 hidden md:inline">(無尺寸限制)</span>
+        <div class="flex-1 p-3 md:p-4 overflow-y-auto flex flex-col min-h-0" id="scroll-area">
+            <h3 class="text-amber-500/80 font-bold text-xs tracking-widest mb-2 flex items-center gap-2 flex-shrink-0">
+                📥 暫存庫存區 <span class="text-[10px] text-gray-500">(無尺寸限制)</span>
             </h3>
-            <div id="staging-area" class="dropzone staging-bg flex-1 flex flex-wrap gap-2 content-start p-2 md:p-3 bg-[#110d0a] border-2 border-dashed border-[#4a3424] rounded-lg min-h-[100px] md:min-h-[200px]" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999">
-                <!-- 暫存玩具將出現在此 -->
+            <div id="staging-area" class="dropzone staging-bg flex-1 flex flex-wrap gap-2 content-start p-2 bg-[#110d0a] border-2 border-dashed border-[#4a3424] rounded-lg min-h-[100px]" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999" data-max-d="9999">
+                <!-- 暫存玩具 -->
             </div>
         </div>
     </div>
 
-    <!-- =================== 右側/下方畫布區 =================== -->
-    <div class="flex-1 bg-[#121212] overflow-auto relative p-4 md:p-8" id="canvas-container">
+    <div class="flex-1 bg-[#121212] overflow-auto relative p-4 md:p-8" id="canvas-container" style="touch-action: pan-x pan-y;">
         <div id="cabinet-canvas" class="flex gap-4 md:gap-8 items-end min-w-max pb-20 pt-10 px-4">
-            <!-- 櫃體會透過 JS 插入此處 -->
+            <!-- 櫃體列表 -->
             <div class="flex items-center h-full pb-4 shrink-0">
-                <button onclick="openModal('add-cabinet-modal')" class="w-12 h-48 md:w-16 md:h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
-                    <svg class="w-6 h-6 md:w-8 md:h-8 mb-2 transform group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    <span class="text-[10px] md:text-xs font-bold writing-vertical-rl align-middle tracking-widest" style="writing-mode: vertical-rl;">新增櫃體</span>
+                <button onclick="openModal('add-cabinet-modal')" class="w-16 h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
+                    <svg class="w-8 h-8 mb-2 transform group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    <span class="text-xs font-bold writing-vertical-rl align-middle tracking-widest" style="writing-mode: vertical-rl;">新增櫃體</span>
                 </button>
             </div>
         </div>
+    </div>
+
+    <div id="three-container">
+        <button id="three-close-btn" onclick="close3DScene()" class="px-6 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg shadow-lg">✖ 關閉 3D / 回到 2D</button>
+        <div id="three-ui-overlay">左鍵: 旋轉視角 | 右鍵: 平移 | 滾輪: 縮放</div>
     </div>
 
     <!-- Error Modal -->
-    <div id="error-modal" class="fixed inset-0 z-[999] bg-black/70 hidden items-center justify-center backdrop-blur-sm px-4">
+    <div id="error-modal" class="fixed inset-0 z-[9999] bg-black/70 hidden items-center justify-center backdrop-blur-sm px-4">
         <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
-            <p id="error-message" class="text-gray-300 text-sm md:text-base text-center mb-6 leading-relaxed"></p>
-            <button onclick="closeModal('error-modal')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">我知道了</button>
+            <h3 class="text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
+            <p id="error-message" class="text-gray-300 text-sm text-center mb-6 leading-relaxed"></p>
+            <button onclick="closeModal('error-modal')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg">我知道了</button>
         </div>
     </div>
 
-    <!-- Toy Options Modal (Double Click) -->
+    <!-- Toy Options Modal -->
     <div id="toy-options-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-2 border-b border-gray-600 pb-2" id="opt-toy-title">玩具名稱</h3>
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-amber-500 mb-2 border-b border-gray-600 pb-2" id="opt-toy-title">玩具名稱</h3>
             <div class="text-gray-300 text-sm mb-6 space-y-1">
-                <p>面寬佔用： <b class="text-white text-base" id="opt-toy-w"></b> cm</p>
-                <p>高度限制： <b class="text-white text-base" id="opt-toy-h"></b> cm</p>
+                <p>面寬 (W)： <b class="text-white text-base" id="opt-toy-w"></b> cm</p>
+                <p>高度 (H)： <b class="text-white text-base" id="opt-toy-h"></b> cm</p>
+                <p>深度 (D)： <b class="text-white text-base" id="opt-toy-d"></b> cm</p>
             </div>
             <div class="space-y-3">
-                <button onclick="triggerToyImageUpload()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition-colors text-sm">🖼️ 上傳真實圖片</button>
-                <button onclick="triggerToyDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded transition-colors text-sm" id="opt-toy-del-btn">✖ 刪除玩具 (退回暫存)</button>
-                <button onclick="closeModal('toy-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded transition-colors text-sm">取消關閉</button>
+                <button onclick="triggerImageUpload('toy')" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳真實圖片 / 材質</button>
+                <button onclick="triggerToyDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-sm" id="opt-toy-del-btn">✖ 刪除玩具</button>
+                <button onclick="closeModal('toy-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
             </div>
         </div>
     </div>
 
-    <!-- Shelf Options Modal (Double Click) -->
+    <!-- Shelf Options Modal -->
     <div id="shelf-options-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-emerald-400 mb-2 border-b border-gray-600 pb-2" id="opt-shelf-title">層板名稱</h3>
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-emerald-400 mb-2 border-b border-gray-600 pb-2" id="opt-shelf-title">層板名稱</h3>
             <div class="text-gray-300 text-sm mb-6 space-y-1">
+                <p>內部寬度限制： <b class="text-white text-base" id="opt-shelf-w"></b> cm</p>
                 <p>當前淨高限制： <b class="text-white text-base" id="opt-shelf-h"></b> cm</p>
-                <p class="text-xs text-gray-400 mt-2">提示：也可以按住層板上緣直接拖曳調整高度</p>
+                <p>內部深度限制： <b class="text-white text-base" id="opt-shelf-d"></b> cm</p>
             </div>
             <div class="space-y-3">
-                <button onclick="triggerShelfImageUpload()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition-colors text-sm">🖼️ 上傳層板背景圖</button>
-                <button onclick="triggerShelfDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded transition-colors text-sm">✖ 刪除整個層板</button>
-                <button onclick="closeModal('shelf-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded transition-colors text-sm">取消關閉</button>
+                <button onclick="triggerImageUpload('shelf')" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳層板背景圖</button>
+                <button onclick="triggerShelfDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-sm">✖ 刪除整個層板</button>
+                <button onclick="closeModal('shelf-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cabinet Options Modal (3D Settings) -->
+    <div id="cabinet-options-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-gray-800 border border-amber-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-amber-500 mb-4" id="opt-cab-title">櫃體 3D 空間設定</h3>
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-gray-300 text-xs font-bold mb-1">櫃體深度 (cm)</label>
+                    <input type="number" id="opt-cab-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-gray-300 text-xs font-bold mb-1">3D 空間 X 座標</label>
+                        <input type="number" id="opt-cab-x" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm" placeholder="自動">
+                    </div>
+                    <div>
+                        <label class="block text-gray-300 text-xs font-bold mb-1">3D 空間 Z 座標</label>
+                        <input type="number" id="opt-cab-z" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm" placeholder="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-300 text-xs font-bold mb-1">3D 擺放旋轉角度 (Y軸)</label>
+                    <select id="opt-cab-rot" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">
+                        <option value="0">朝前 (0°)</option>
+                        <option value="90">朝左 (90°)</option>
+                        <option value="-90">朝右 (-90°)</option>
+                        <option value="180">朝後 (180°)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex flex-col space-y-2">
+                <button onclick="saveCabinetSettings()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-sm">💾 儲存設定</button>
+                <button onclick="triggerCabinetDelete()" class="w-full py-2 border border-red-600 text-red-400 hover:bg-red-600 hover:text-white font-bold rounded text-sm">✖ 刪除整個櫃體</button>
+                <button onclick="closeModal('cabinet-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
             </div>
         </div>
     </div>
 
     <!-- Add Toy Modal -->
     <div id="add-toy-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-4">✨ 新增玩具元件</h3>
-            <div class="space-y-3 md:space-y-4">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-amber-500 mb-4">✨ 新增玩具元件</h3>
+            <div class="space-y-3">
                 <div>
-                    <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">名稱</label>
+                    <label class="block text-gray-300 text-xs font-bold mb-1">名稱</label>
                     <input type="text" id="new-toy-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="例如: 哥吉拉">
                 </div>
-                <div class="flex gap-4">
-                    <div class="w-1/2">
-                        <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">面寬 (cm)</label>
-                        <input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="10">
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-gray-300 text-xs font-bold mb-1">面寬(W)</label>
+                        <input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="10">
                     </div>
-                    <div class="w-1/2">
-                        <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">高度 (cm)</label>
-                        <input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="20">
+                    <div>
+                        <label class="block text-gray-300 text-xs font-bold mb-1">高度(H)</label>
+                        <input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="20">
+                    </div>
+                    <div>
+                        <label class="block text-gray-300 text-xs font-bold mb-1">深度(D)</label>
+                        <input type="number" id="new-toy-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="10">
                     </div>
                 </div>
                 <div>
-                    <label class="block text-gray-300 text-xs md:text-sm font-bold mb-1">代表顏色 (上傳圖片前墊底色)</label>
+                    <label class="block text-gray-300 text-xs font-bold mb-1">代表顏色 (3D 基礎色)</label>
                     <input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#b91c1c">
                 </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
                 <button onclick="closeModal('add-toy-modal')" class="px-4 py-2 bg-gray-700 text-white text-sm rounded">取消</button>
-                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded">加入</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Export Modal -->
-    <div id="export-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh]">
-            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-3">💾 匯出配置與存檔</h3>
-            <p class="text-gray-400 text-xs md:text-sm mb-4">這會打包當前所有的圖片、尺寸與排列狀態：</p>
-            <div class="flex flex-col md:flex-row gap-3 md:gap-4 mb-4">
-                <button onclick="exportAsFile()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors text-sm">📥 下載 HTML 存檔</button>
-                <button onclick="showSourceCode()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-sm">📋 顯示原始碼</button>
-            </div>
-            <div id="code-preview-area" class="hidden flex-col flex-1 min-h-[100px] md:min-h-0">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs font-bold text-gray-300">請全選複製：</span>
-                    <button onclick="copyCodeText()" class="text-[10px] md:text-xs bg-gray-700 hover:bg-gray-600 px-2 md:px-3 py-1 rounded text-white">一鍵複製</button>
-                </div>
-                <textarea id="export-textarea" class="w-full flex-1 bg-gray-900 text-gray-300 border border-gray-600 rounded p-2 text-[10px] resize-none focus:outline-none" readonly></textarea>
-            </div>
-            <div class="mt-4 flex justify-end shrink-0">
-                <button onclick="closeModal('export-modal')" class="px-5 py-2 bg-gray-700 text-white text-sm rounded">關閉</button>
+                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded">加入暫存區</button>
             </div>
         </div>
     </div>
 
     <!-- Add Cabinet Modal -->
     <div id="add-cabinet-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-4">🪚 新增一組櫃體</h3>
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-amber-500 mb-4">🪚 新增一組櫃體</h3>
             <div class="space-y-4">
                 <div>
                     <label class="block text-gray-300 text-sm font-bold mb-1">櫃體名稱</label>
                     <input type="text" id="new-cab-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="例如: 擴充展示櫃">
                 </div>
-                <div>
-                    <label class="block text-gray-300 text-sm font-bold mb-1">內部淨寬 (cm)</label>
-                    <input type="number" id="new-cab-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="70">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-300 text-sm font-bold mb-1">內部淨寬 (cm)</label>
+                        <input type="number" id="new-cab-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="70">
+                    </div>
+                    <div>
+                        <label class="block text-gray-300 text-sm font-bold mb-1">內部深度 (cm)</label>
+                        <input type="number" id="new-cab-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="24">
+                    </div>
                 </div>
             </div>
             <div class="mt-6 flex justify-end gap-3">
@@ -251,8 +305,8 @@
 
     <!-- Add Shelf Modal -->
     <div id="add-shelf-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 md:p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg md:text-xl font-bold text-amber-500 mb-4">➖ 新增層板</h3>
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
+            <h3 class="text-lg font-bold text-amber-500 mb-4">➖ 新增層板</h3>
             <input type="hidden" id="target-cabinet-id">
             <div class="space-y-4">
                 <div>
@@ -271,68 +325,58 @@
         </div>
     </div>
 
+    <!-- Export Modal -->
+    <div id="export-modal" class="fixed inset-0 z-[999] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-2xl w-full shadow-2xl flex flex-col">
+            <h3 class="text-lg font-bold text-amber-500 mb-3">💾 匯出配置與存檔</h3>
+            <div class="flex flex-col gap-3 mb-4">
+                <button onclick="exportAsFile()" class="py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors text-sm">📥 下載 HTML 獨立執行檔 (推薦)</button>
+            </div>
+            <div class="mt-4 flex justify-end shrink-0">
+                <button onclick="closeModal('export-modal')" class="px-5 py-2 bg-gray-700 text-white text-sm rounded">關閉</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const SCALE = 4;
-        let draggedItem = null;
-        let touchGhost = null;
-        let touchOffsetX = 0;
-        let touchOffsetY = 0;
-        let activeDropzone = null;
-        
-        // 用於存放當前被雙擊選中的目標
-        let activeToy = null;
-        let activeShelf = null;
-        let uploadTarget = null;
+        let draggedItem = null, touchGhost = null, touchOffsetX = 0, touchOffsetY = 0, activeDropzone = null;
+        let activeObj = null, uploadType = ''; // 'toy' or 'shelf'
+        let activeCabinet = null;
 
-        // 綁定所有互動事件
+        // 工具函數：Modal 開關
+        window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
+        window.closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
+        window.showErrorModal = (msg) => { document.getElementById('error-message').innerHTML = msg; openModal('error-modal'); };
+
+        // 綁定所有 2D 互動事件 (拖曳、雙擊)
         window.rebindAllEvents = function() {
-            const toys = document.querySelectorAll('.toy-block');
-            toys.forEach(block => {
+            // 玩具事件綁定
+            document.querySelectorAll('.toy-block').forEach(block => {
                 if (block.dataset.bound === 'true') return;
                 block.dataset.bound = 'true';
                 
-                // 雙擊事件 (PC與手機通用自製計時器)
-                block.addEventListener('click', (e) => {
-                    let currentTime = new Date().getTime();
-                    let tapLength = currentTime - (block.dataset.lastClick || 0);
-                    if (tapLength < 350 && tapLength > 0) {
-                        e.preventDefault();
-                        e.stopPropagation(); // 阻止事件傳遞給後方的層板
-                        openToyOptions(block);
-                    }
-                    block.dataset.lastClick = currentTime;
-                });
+                // 雙擊開啟玩具設定
+                block.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); openToyOptions(block); });
                 
-                // Desktop Drag
-                block.addEventListener('dragstart', (e) => {
-                    draggedItem = block;
-                    setTimeout(() => block.classList.add('dragging'), 0);
-                });
-                block.addEventListener('dragend', () => {
-                    block.classList.remove('dragging');
-                    draggedItem = null;
-                    document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-                });
+                // Desktop 拖曳
+                block.addEventListener('dragstart', () => { draggedItem = block; setTimeout(() => block.classList.add('dragging'), 0); });
+                block.addEventListener('dragend', () => { block.classList.remove('dragging'); draggedItem = null; document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over')); });
 
-                // Touch Drag Support
+                // Touch 拖曳
                 block.addEventListener('touchstart', (e) => {
                     if(e.touches.length > 1) return;
                     draggedItem = block;
                     const touch = e.touches[0];
                     const rect = block.getBoundingClientRect();
-                    
                     touchGhost = block.cloneNode(true);
                     touchGhost.style.position = 'fixed';
                     touchGhost.style.left = rect.left + 'px';
                     touchGhost.style.top = rect.top + 'px';
-                    touchGhost.style.width = rect.width + 'px';
-                    touchGhost.style.height = rect.height + 'px';
                     touchGhost.style.opacity = '0.7';
                     touchGhost.style.pointerEvents = 'none';
                     touchGhost.style.zIndex = '99999';
-                    touchGhost.style.transform = 'scale(1.05)';
                     document.body.appendChild(touchGhost);
-                    
                     block.classList.add('dragging');
                     touchOffsetX = touch.clientX - rect.left;
                     touchOffsetY = touch.clientY - rect.top;
@@ -344,513 +388,564 @@
                     const touch = e.touches[0];
                     touchGhost.style.left = (touch.clientX - touchOffsetX) + 'px';
                     touchGhost.style.top = (touch.clientY - touchOffsetY) + 'px';
-                    
                     touchGhost.style.visibility = 'hidden';
                     const target = document.elementFromPoint(touch.clientX, touch.clientY);
                     touchGhost.style.visibility = 'visible';
-                    
                     const dropzone = target ? target.closest('.dropzone') : null;
                     document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
                     activeDropzone = null;
-                    
-                    if (dropzone) {
-                        dropzone.classList.add('drag-over');
-                        activeDropzone = dropzone;
-                    }
+                    if (dropzone) { dropzone.classList.add('drag-over'); activeDropzone = dropzone; }
                 }, {passive: false});
 
-                block.addEventListener('touchend', (e) => {
+                block.addEventListener('touchend', () => {
                     if (!touchGhost) return;
-                    touchGhost.remove();
-                    touchGhost = null;
+                    touchGhost.remove(); touchGhost = null;
                     block.classList.remove('dragging');
                     document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-                    
-                    if (activeDropzone && activeDropzone !== block.parentElement) {
-                        handleDropLogic(block, activeDropzone);
-                    }
-                    draggedItem = null;
-                    activeDropzone = null;
+                    if (activeDropzone && activeDropzone !== block.parentElement) handleDropLogic(block, activeDropzone);
+                    draggedItem = null; activeDropzone = null;
                 });
             });
 
-            const dropzones = document.querySelectorAll('.dropzone');
-            dropzones.forEach(dropzone => {
+            // 層板事件綁定
+            document.querySelectorAll('.dropzone').forEach(dropzone => {
                 if (dropzone.dataset.bound === 'true') return;
                 dropzone.dataset.bound = 'true';
                 
-                // 層板背景雙擊事件
-                dropzone.addEventListener('click', (e) => {
-                    if (e.target !== dropzone) return; // 確保只點擊到空白處，沒有點到玩具
-                    let currentTime = new Date().getTime();
-                    let tapLength = currentTime - (dropzone.dataset.lastClick || 0);
-                    if (tapLength < 350 && tapLength > 0) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        // 暫存區不可刪除或換背景
-                        if(dropzone.id !== 'staging-area') {
-                            openShelfOptions(dropzone.closest('.shelf-container'));
-                        }
-                    }
-                    dropzone.dataset.lastClick = currentTime;
+                dropzone.addEventListener('dblclick', (e) => {
+                    if (e.target !== dropzone || dropzone.id === 'staging-area') return; 
+                    e.preventDefault(); e.stopPropagation();
+                    openShelfOptions(dropzone.closest('.shelf-container'));
                 });
 
-                dropzone.addEventListener('dragover', (e) => {
-                    e.preventDefault(); 
-                    dropzone.classList.add('drag-over');
-                });
+                dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
                 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
                 dropzone.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    dropzone.classList.remove('drag-over');
-                    if (!draggedItem || dropzone === draggedItem.parentElement) return; 
-                    handleDropLogic(draggedItem, dropzone);
+                    e.preventDefault(); dropzone.classList.remove('drag-over');
+                    if (draggedItem && dropzone !== draggedItem.parentElement) handleDropLogic(draggedItem, dropzone);
+                });
+            });
+
+            // 櫃體標題事件綁定 (開啟 3D 設定)
+            document.querySelectorAll('.cabinet-header').forEach(header => {
+                if (header.dataset.bound === 'true') return;
+                header.dataset.bound = 'true';
+                header.addEventListener('dblclick', (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    openCabinetOptions(header.closest('.cabinet-group'));
                 });
             });
         }
 
+        // 空間驗證邏輯 (包含深度)
         window.handleDropLogic = function(item, dropzone) {
             const maxW = parseFloat(dropzone.getAttribute('data-max-w')) || 9999;
             const maxH = parseFloat(dropzone.getAttribute('data-max-h')) || 9999;
+            const maxD = parseFloat(dropzone.getAttribute('data-max-d')) || 9999;
             const zoneName = dropzone.getAttribute('data-name') || '此區塊';
             const itemW = parseFloat(item.getAttribute('data-w'));
             const itemH = parseFloat(item.getAttribute('data-h'));
+            const itemD = parseFloat(item.getAttribute('data-d')) || itemW; // 若無深度預設同寬度
             const itemName = item.getAttribute('data-name');
 
-            if (itemH > maxH) {
-                showErrorModal(`【高度不足】<br>「${itemName}」高度為 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制為 <b>${maxH}</b> cm<br><br>高度超出 <span class="text-red-400 font-bold text-xl">${(itemH - maxH).toFixed(1)}</span> cm`);
-                return;
-            }
+            if (itemH > maxH) return showErrorModal(`【高度不足】<br>「${itemName}」高度為 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制為 <b>${maxH}</b> cm<br><br>高度超出 <span class="text-red-400 font-bold">${(itemH - maxH).toFixed(1)}</span> cm`);
+            if (itemD > maxD) return showErrorModal(`【深度不足】<br>「${itemName}」深度為 <b>${itemD}</b> cm<br>「${zoneName}」深度限制為 <b>${maxD}</b> cm<br><br>深度超出 <span class="text-red-400 font-bold">${(itemD - maxD).toFixed(1)}</span> cm`);
 
             const currentItems = Array.from(dropzone.querySelectorAll('.toy-block'));
             const currentUsedW = currentItems.reduce((sum, curr) => sum + parseFloat(curr.getAttribute('data-w')), 0);
-            const remainingW = maxW - currentUsedW;
-
-            if (itemW > remainingW) {
-                showErrorModal(`【寬度不足】<br>「${itemName}」需面寬 <b>${itemW}</b> cm<br>「${zoneName}」剩餘寬度 <b>${remainingW.toFixed(1)}</b> cm<br><br>寬度缺少 <span class="text-red-400 font-bold text-xl">${(itemW - remainingW).toFixed(1)}</span> cm`);
-                return;
-            }
+            if (itemW > (maxW - currentUsedW)) return showErrorModal(`【面寬不足】<br>「${itemName}」需面寬 <b>${itemW}</b> cm<br>剩餘面寬僅 <b>${(maxW - currentUsedW).toFixed(1)}</b> cm`);
+            
             dropzone.appendChild(item);
         }
 
-        // --- 選單 Modal 觸發與功能 ---
-        
+        // --- 控制面板開關與資料載入 ---
         window.openToyOptions = function(toy) {
-            activeToy = toy;
+            activeObj = toy;
             document.getElementById('opt-toy-title').innerText = toy.getAttribute('data-name');
             document.getElementById('opt-toy-w').innerText = toy.getAttribute('data-w');
             document.getElementById('opt-toy-h').innerText = toy.getAttribute('data-h');
-            
+            document.getElementById('opt-toy-d').innerText = toy.getAttribute('data-d') || toy.getAttribute('data-w');
             const delBtn = document.getElementById('opt-toy-del-btn');
-            if (activeToy.parentElement === document.getElementById('staging-area')) {
-                delBtn.innerText = "✖ 永久刪除玩具";
-                delBtn.classList.replace('bg-red-600', 'bg-red-800');
-            } else {
-                delBtn.innerText = "✖ 退回暫存區";
-                delBtn.classList.replace('bg-red-800', 'bg-red-600');
-            }
+            if (activeObj.parentElement.id === 'staging-area') { delBtn.innerText = "✖ 永久刪除玩具"; delBtn.classList.replace('bg-red-600', 'bg-red-800'); }
+            else { delBtn.innerText = "✖ 退回暫存區"; delBtn.classList.replace('bg-red-800', 'bg-red-600'); }
             openModal('toy-options-modal');
         }
 
         window.triggerToyDelete = function() {
-            if(!activeToy) return;
+            if(!activeObj) return;
             const staging = document.getElementById('staging-area');
-            if (activeToy.parentElement === staging) {
-                activeToy.remove();
-            } else {
-                staging.appendChild(activeToy);
-            }
-            closeModal('toy-options-modal');
-            rebindAllEvents();
-        }
-
-        window.triggerToyImageUpload = function() {
-            if(!activeToy) return;
-            uploadTarget = activeToy;
-            document.getElementById('image-uploader').click();
+            if (activeObj.parentElement === staging) activeObj.remove();
+            else staging.appendChild(activeObj);
             closeModal('toy-options-modal');
         }
 
         window.openShelfOptions = function(shelf) {
-            activeShelf = shelf;
+            activeObj = shelf;
             const dropzone = shelf.querySelector('.dropzone');
             document.getElementById('opt-shelf-title').innerText = dropzone.getAttribute('data-name');
+            document.getElementById('opt-shelf-w').innerText = dropzone.getAttribute('data-max-w');
             document.getElementById('opt-shelf-h').innerText = dropzone.getAttribute('data-max-h');
+            document.getElementById('opt-shelf-d').innerText = dropzone.getAttribute('data-max-d');
             openModal('shelf-options-modal');
         }
 
         window.triggerShelfDelete = function() {
-            if(!activeShelf) return;
-            if(!confirm("確定要刪除此層板嗎？裡面的玩具會退回暫存區。")) return;
-            const dropzone = activeShelf.querySelector('.dropzone');
+            if(!activeObj || !confirm("確定要刪除此層板嗎？裡面的玩具會退回暫存區。")) return;
+            const dropzone = activeObj.querySelector('.dropzone');
             const staging = document.getElementById('staging-area');
-            const toys = dropzone.querySelectorAll('.toy-block');
-            toys.forEach(toy => staging.appendChild(toy));
-            activeShelf.remove();
-            closeModal('shelf-options-modal');
+            dropzone.querySelectorAll('.toy-block').forEach(toy => staging.appendChild(toy));
+            activeObj.remove(); closeModal('shelf-options-modal');
         }
 
-        window.triggerShelfImageUpload = function() {
-            if(!activeShelf) return;
-            uploadTarget = activeShelf.querySelector('.dropzone');
+        window.openCabinetOptions = function(cab) {
+            activeCabinet = cab;
+            document.getElementById('opt-cab-title').innerText = cab.querySelector('.cabinet-title-text').innerText + " 設定";
+            document.getElementById('opt-cab-d').value = cab.getAttribute('data-d') || 24;
+            document.getElementById('opt-cab-x').value = cab.getAttribute('data-posx') || '';
+            document.getElementById('opt-cab-z').value = cab.getAttribute('data-posz') || 0;
+            document.getElementById('opt-cab-rot').value = cab.getAttribute('data-roty') || 0;
+            openModal('cabinet-options-modal');
+        }
+
+        window.saveCabinetSettings = function() {
+            if(!activeCabinet) return;
+            const d = document.getElementById('opt-cab-d').value;
+            activeCabinet.setAttribute('data-d', d);
+            activeCabinet.setAttribute('data-posx', document.getElementById('opt-cab-x').value);
+            activeCabinet.setAttribute('data-posz', document.getElementById('opt-cab-z').value);
+            activeCabinet.setAttribute('data-roty', document.getElementById('opt-cab-rot').value);
+            
+            // 同步更新櫃體內所有層板的深度限制
+            activeCabinet.querySelectorAll('.dropzone').forEach(dz => dz.setAttribute('data-max-d', d));
+            closeModal('cabinet-options-modal');
+        }
+
+        window.triggerCabinetDelete = function() {
+            if(!activeCabinet || !confirm("確定要刪除整個櫃體嗎？玩具將退回暫存區。")) return;
+            const staging = document.getElementById('staging-area');
+            activeCabinet.querySelectorAll('.toy-block').forEach(toy => staging.appendChild(toy));
+            activeCabinet.remove(); closeModal('cabinet-options-modal');
+        }
+
+        // --- 圖片上傳 (保留 Base64 資料供 3D 使用) ---
+        window.triggerImageUpload = function(type) {
+            uploadType = type;
             document.getElementById('image-uploader').click();
-            closeModal('shelf-options-modal');
         }
-
-        // --- 圖片上傳處理 ---
-        const uploader = document.getElementById('image-uploader');
-        uploader.addEventListener('change', function(e) {
+        document.getElementById('image-uploader').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (!file || !uploadTarget) return;
+            if (!file || !activeObj) return;
             const reader = new FileReader();
             reader.onload = function(event) {
                 const imgUrl = event.target.result;
-                uploadTarget.style.backgroundImage = `url(${imgUrl})`;
-                uploadTarget.style.backgroundSize = 'cover';
-                uploadTarget.style.backgroundPosition = 'center';
-                
-                if (uploadTarget.classList.contains('toy-block')) {
-                    const textSpan = uploadTarget.querySelector('.text-content');
-                    if (textSpan) textSpan.style.opacity = '0'; // 隱藏文字
-                    uploadTarget.style.backgroundColor = 'transparent';
-                    uploadTarget.style.boxShadow = 'none'; // 取消內陰影
+                let targetEl = uploadType === 'shelf' ? activeObj.querySelector('.dropzone') : activeObj;
+                targetEl.style.backgroundImage = `url(${imgUrl})`;
+                targetEl.setAttribute('data-img', imgUrl); // 儲存為 3D 貼圖來源
+                if (uploadType === 'toy') {
+                    const textSpan = targetEl.querySelector('.text-content');
+                    if (textSpan) textSpan.style.opacity = '0'; 
+                    targetEl.style.backgroundColor = 'transparent';
+                    targetEl.style.boxShadow = 'none';
                 }
+                closeModal(uploadType === 'toy' ? 'toy-options-modal' : 'shelf-options-modal');
             };
             reader.readAsDataURL(file);
             e.target.value = '';
         });
 
-        // --- 櫃體與層板建立 ---
-        let isResizing = false;
-        let resizeTarget = null;
-        let startY = 0;
-        let startHeight = 0;
-
+        // --- 拖曳改變層板高度 ---
+        let isResizing = false, resizeTarget = null, startY = 0, startHeight = 0;
         window.startResizeShelf = function(e, handle) {
-            e.preventDefault();
-            e.stopPropagation();
-            isResizing = true;
-            resizeTarget = handle.closest('.shelf-container');
+            e.preventDefault(); e.stopPropagation();
+            isResizing = true; resizeTarget = handle.closest('.shelf-container');
             startY = e.clientY || (e.touches && e.touches[0].clientY);
             startHeight = parseFloat(resizeTarget.style.height);
-            
-            document.addEventListener('mousemove', doResize);
-            document.addEventListener('mouseup', stopResize);
-            document.addEventListener('touchmove', doResize, {passive: false});
-            document.addEventListener('touchend', stopResize);
-            
-            handle.style.backgroundColor = 'rgba(245, 158, 11, 0.6)';
+            document.addEventListener('mousemove', doResize); document.addEventListener('mouseup', stopResize);
+            document.addEventListener('touchmove', doResize, {passive: false}); document.addEventListener('touchend', stopResize);
         }
-
         function doResize(e) {
             if (!isResizing) return;
             e.preventDefault();
             const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            const deltaY = startY - clientY; 
-            let newHeightPx = startHeight + deltaY;
-            
+            let newHeightPx = startHeight + (startY - clientY);
             const dropzone = resizeTarget.querySelector('.dropzone');
-            const toys = Array.from(dropzone.querySelectorAll('.toy-block'));
             let maxToyH = 10; 
-            toys.forEach(t => {
-                const th = parseFloat(t.getAttribute('data-h'));
-                if (th > maxToyH) maxToyH = th;
-            });
-            const minHeightPx = maxToyH * SCALE;
-
-            if (newHeightPx < minHeightPx) newHeightPx = minHeightPx; 
-            
+            dropzone.querySelectorAll('.toy-block').forEach(t => maxToyH = Math.max(maxToyH, parseFloat(t.getAttribute('data-h'))));
+            if (newHeightPx < maxToyH * SCALE) newHeightPx = maxToyH * SCALE; 
             resizeTarget.style.height = newHeightPx + 'px';
-            
             const newHeightCm = Math.round(newHeightPx / SCALE);
             dropzone.setAttribute('data-max-h', newHeightCm);
-            
-            const label = resizeTarget.querySelector('.shelf-label');
-            const name = dropzone.getAttribute('data-name');
-            label.innerText = `${name} (高${newHeightCm})`;
+            resizeTarget.querySelector('.shelf-label').innerText = `${dropzone.getAttribute('data-name')} (高${newHeightCm})`;
         }
-
         function stopResize() {
-            if(!isResizing) return;
-            isResizing = false;
-            if(resizeTarget) {
-                const handle = resizeTarget.querySelector('.resize-handle');
-                if(handle) handle.style.backgroundColor = '';
-            }
-            resizeTarget = null;
-            document.removeEventListener('mousemove', doResize);
-            document.removeEventListener('mouseup', stopResize);
-            document.removeEventListener('touchmove', doResize);
-            document.removeEventListener('touchend', stopResize);
+            isResizing = false; resizeTarget = null;
+            document.removeEventListener('mousemove', doResize); document.removeEventListener('mouseup', stopResize);
+            document.removeEventListener('touchmove', doResize); document.removeEventListener('touchend', stopResize);
         }
 
-        window.deleteCabinet = function(btn) {
-            if(!confirm("確定要刪除整個櫃體嗎？裡面的玩具會退回暫存區。")) return;
-            const cab = btn.closest('.cabinet-group');
-            const staging = document.getElementById('staging-area');
-            const toys = cab.querySelectorAll('.toy-block');
-            toys.forEach(toy => staging.appendChild(toy));
-            cab.remove();
-        };
-
-        window.openAddShelf = function(cabId) {
-            document.getElementById('target-cabinet-id').value = cabId;
-            openModal('add-shelf-modal');
-        };
-
+        // --- 新增實體 ---
+        window.openAddShelf = function(cabId) { document.getElementById('target-cabinet-id').value = cabId; openModal('add-shelf-modal'); };
+        
         window.createNewCabinet = function() {
             const name = document.getElementById('new-cab-name').value || '新櫃體';
             const w = parseFloat(document.getElementById('new-cab-w').value) || 70;
+            const d = parseFloat(document.getElementById('new-cab-d').value) || 24;
             const cabId = 'cab_' + Date.now();
             const cabHtml = `
-                <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${cabId}">
-                    <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group z-20">
-                        ${name} (寬 ${w}cm)
-                        <button onclick="deleteCabinet(this)" class="cabinet-action-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
-                        <button onclick="openAddShelf('${cabId}')" class="cabinet-action-btn absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-[10px] md:text-xs">+ 層板</button>
+                <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${cabId}" data-d="${d}" data-posx="" data-posz="0" data-roty="0">
+                    <div class="cabinet-header w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-2 border-b-4 border-[#2a1d15] relative z-20 cursor-pointer hover:bg-[#4d3b2f] transition-colors" title="雙擊設定 3D 空間">
+                        <span class="cabinet-title-text">${name}</span> (寬 ${w} / 深 ${d})
+                        <button onclick="openAddShelf('${cabId}'); event.stopPropagation();" class="absolute left-2 top-2 text-emerald-400 hover:text-emerald-300 text-xs">+ 層板</button>
                     </div>
                     <div class="shelf-list flex flex-col flex-1 justify-end"></div>
                 </div>`;
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = cabHtml.trim();
+            const wrapper = document.createElement('div'); wrapper.innerHTML = cabHtml.trim();
             const canvas = document.getElementById('cabinet-canvas');
             canvas.insertBefore(wrapper.firstChild, canvas.querySelector('.pb-4.shrink-0'));
-            closeModal('add-cabinet-modal');
+            rebindAllEvents(); closeModal('add-cabinet-modal');
         };
 
         window.createNewShelf = function() {
-            const cabId = document.getElementById('target-cabinet-id').value;
+            const cab = document.getElementById(document.getElementById('target-cabinet-id').value);
             const name = document.getElementById('new-shelf-name').value || '新層板';
             const h = parseFloat(document.getElementById('new-shelf-h').value) || 35;
-            const cab = document.getElementById(cabId);
-            const titleDiv = cab.querySelector('.w-full.bg-\\[\\#3d2b1f\\]');
-            const match = titleDiv.innerText.match(/寬\s*([\d.]+)cm/);
+            const match = cab.querySelector('.cabinet-title-text').nextSibling.nodeValue.match(/寬\s*([\d.]+)/);
             const w = match ? parseFloat(match[1]) : 70;
-
+            const d = parseFloat(cab.getAttribute('data-d')) || 24;
             const shelfHtml = `
                 <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
                     <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
-                    <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
-                    <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
+                    <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 pointer-events-none">${name} (高${h})</div>
+                    <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}" data-max-d="${d}"></div>
                 </div>`;
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = shelfHtml.trim();
+            const wrapper = document.createElement('div'); wrapper.innerHTML = shelfHtml.trim();
             cab.querySelector('.shelf-list').prepend(wrapper.firstChild);
-            rebindAllEvents();
-            closeModal('add-shelf-modal');
+            rebindAllEvents(); closeModal('add-shelf-modal');
         };
 
         window.createNewToy = function() {
-            const name = document.getElementById('new-toy-name').value || '未命名玩具';
+            const name = document.getElementById('new-toy-name').value || '未命名';
             const w = parseFloat(document.getElementById('new-toy-w').value) || 10;
             const h = parseFloat(document.getElementById('new-toy-h').value) || 20;
+            const d = parseFloat(document.getElementById('new-toy-d').value) || 10;
             const color = document.getElementById('new-toy-color').value;
-
             const toy = document.createElement('div');
-            toy.className = 'toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] md:text-xs overflow-hidden shadow-md leading-none text-center select-none';
-            toy.style.width = (w * SCALE) + 'px';
-            toy.style.height = (h * SCALE) + 'px';
-            toy.style.backgroundColor = color;
-            toy.setAttribute('draggable', 'true');
-            toy.setAttribute('data-name', name);
-            toy.setAttribute('data-w', w);
-            toy.setAttribute('data-h', h);
+            toy.className = 'toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] overflow-hidden shadow-md text-center select-none';
+            toy.style.width = (w * SCALE) + 'px'; toy.style.height = (h * SCALE) + 'px'; toy.style.backgroundColor = color;
+            toy.setAttribute('draggable', 'true'); toy.setAttribute('data-name', name);
+            toy.setAttribute('data-w', w); toy.setAttribute('data-h', h); toy.setAttribute('data-d', d); toy.setAttribute('data-color', color);
             toy.innerHTML = `<span class="text-content truncate px-1 pointer-events-none">${name}</span>`;
-
             document.getElementById('staging-area').appendChild(toy);
-            rebindAllEvents();
-            closeModal('add-toy-modal');
+            rebindAllEvents(); closeModal('add-toy-modal');
         };
-
-        // --- UI Modal Helpers ---
-        window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
-        window.closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
-        window.showErrorModal = (msg) => { document.getElementById('error-message').innerHTML = msg; openModal('error-modal'); };
 
         window.exportAsFile = function() {
-            const scriptNode = document.getElementById('init-toys');
-            if(scriptNode) scriptNode.remove();
-            const htmlContent = document.documentElement.outerHTML;
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'cabinet_design_saved.html';
-            a.click();
-            URL.revokeObjectURL(url);
+            const scriptNode = document.getElementById('init-toys'); if(scriptNode) scriptNode.remove();
+            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cabinet_3d_design.html'; a.click();
         };
-        window.showSourceCode = function() {
-            const scriptNode = document.getElementById('init-toys');
-            if(scriptNode) scriptNode.remove();
-            document.getElementById('code-preview-area').classList.remove('hidden');
-            document.getElementById('code-preview-area').classList.add('flex');
-            document.getElementById('export-textarea').value = "<!DOCTYPE html>\n<html lang=\"zh-TW\">\n" + document.documentElement.innerHTML + "\n</html>";
+
+        let scene, camera, renderer, orbitControls, reqAnimFrame;
+        const CM_TO_3D = 1; // 1cm = 1 3D unit
+
+        window.generate3DScene = function() {
+            document.getElementById('three-container').style.display = 'block';
+            if(scene) { // 清理舊場景
+                cancelAnimationFrame(reqAnimFrame);
+                renderer.dispose();
+                document.getElementById('three-container').removeChild(renderer.domElement);
+            }
+
+            // 初始化 Three.js
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+            
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 150, 400);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('three-container').appendChild(renderer.domElement);
+
+            orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+            orbitControls.target.set(0, 100, 0);
+
+            // 燈光
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(200, 300, 200);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            // 地板
+            const grid = new THREE.GridHelper(1000, 50, 0x555555, 0x333333);
+            scene.add(grid);
+
+            // 解析 2D DOM 建立 3D 模型
+            const textureLoader = new THREE.TextureLoader();
+            const matWood = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.8 });
+            const matShelf = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 });
+            
+            let defaultPosX = -100; // 自動排版 X 軸起點
+
+            document.querySelectorAll('.cabinet-group').forEach((cabEl, cabIndex) => {
+                const titleStr = cabEl.querySelector('.cabinet-title-text').nextSibling.nodeValue;
+                const w = parseFloat(titleStr.match(/寬\s*([\d.]+)/)[1]) || 70;
+                const d = parseFloat(cabEl.getAttribute('data-d')) || 24;
+                const woodThick = 2; // 木板厚度 2cm
+
+                // 計算櫃體總高
+                let totalH = 0;
+                cabEl.querySelectorAll('.shelf-container').forEach(sh => {
+                    totalH += (parseFloat(sh.style.height) / SCALE) + woodThick;
+                });
+
+                const cabGroup = new THREE.Group();
+
+                // 建立櫃體框架 (左、右、頂)
+                const geoSide = new THREE.BoxGeometry(woodThick, totalH, d);
+                const meshL = new THREE.Mesh(geoSide, matWood); meshL.position.set(-w/2 - woodThick/2, totalH/2, 0); meshL.castShadow = true;
+                const meshR = new THREE.Mesh(geoSide, matWood); meshR.position.set(w/2 + woodThick/2, totalH/2, 0); meshR.castShadow = true;
+                const geoTop = new THREE.BoxGeometry(w + woodThick*2, woodThick, d);
+                const meshT = new THREE.Mesh(geoTop, matWood); meshT.position.set(0, totalH + woodThick/2, 0); meshT.castShadow = true;
+                const meshB = new THREE.Mesh(geoTop, matWood); meshB.position.set(0, woodThick/2, 0); meshB.castShadow = true;
+                cabGroup.add(meshL, meshR, meshT, meshB);
+
+                // 處理層板與玩具
+                let currentY = woodThick; // 從底板上方開始
+                // 注意：在 DOM 中 .shelf-list 的順序是從上到下 (因為 prepend)，我們需要反轉來從底往上建
+                const shelves = Array.from(cabEl.querySelectorAll('.shelf-container')).reverse();
+
+                shelves.forEach(shelfEl => {
+                    const shelfH = parseFloat(shelfEl.style.height) / SCALE;
+                    const dropzone = shelfEl.querySelector('.dropzone');
+                    const bgImg = dropzone.getAttribute('data-img');
+                    
+                    // 層板底板
+                    const sMat = bgImg ? new THREE.MeshStandardMaterial({ map: textureLoader.load(bgImg) }) : matShelf;
+                    const meshS = new THREE.Mesh(new THREE.BoxGeometry(w, woodThick, d), sMat);
+                    meshS.position.set(0, currentY + woodThick/2, 0); meshS.receiveShadow = true;
+                    cabGroup.add(meshS);
+                    
+                    currentY += woodThick; // 玩具的立足點Y
+
+                    // 玩具 Packing (由左後方開始排列)
+                    let tX = -w/2; 
+                    let tZ = -d/2; 
+                    let rowMaxD = 0;
+
+                    dropzone.querySelectorAll('.toy-block').forEach(toyEl => {
+                        const tw = parseFloat(toyEl.getAttribute('data-w'));
+                        const th = parseFloat(toyEl.getAttribute('data-h'));
+                        const td = parseFloat(toyEl.getAttribute('data-d')) || tw;
+                        const tColor = toyEl.getAttribute('data-color') || '#ffffff';
+                        const tImg = toyEl.getAttribute('data-img');
+
+                        // 簡易折行邏輯 (如果超出版寬，往Z軸前方換行)
+                        if (tX + tw > w/2) {
+                            tX = -w/2;
+                            tZ += rowMaxD + 1; // 1cm padding
+                            rowMaxD = 0;
+                        }
+
+                        const tMat = tImg ? new THREE.MeshStandardMaterial({ map: textureLoader.load(tImg) }) : new THREE.MeshStandardMaterial({ color: new THREE.Color(tColor) });
+                        const meshToy = new THREE.Mesh(new THREE.BoxGeometry(tw, th, td), tMat);
+                        meshToy.position.set(tX + tw/2, currentY + th/2, tZ + td/2);
+                        meshToy.castShadow = true;
+                        cabGroup.add(meshToy);
+
+                        tX += tw + 1; // 1cm padding X
+                        rowMaxD = Math.max(rowMaxD, td);
+                    });
+
+                    currentY += shelfH;
+                });
+
+                // 設定櫃體 3D 空間絕對位置
+                let definedX = cabEl.getAttribute('data-posx');
+                let posX = definedX !== "" && definedX !== null ? parseFloat(definedX) : defaultPosX;
+                let posZ = parseFloat(cabEl.getAttribute('data-posz')) || 0;
+                let rotY = parseFloat(cabEl.getAttribute('data-roty')) || 0;
+
+                cabGroup.position.set(posX, 0, posZ);
+                cabGroup.rotation.y = THREE.MathUtils.degToRad(rotY);
+                scene.add(cabGroup);
+
+                if (definedX === "" || definedX === null) defaultPosX += w + woodThick*2 + 5; // 自動並排間距 5cm
+            });
+
+            // 動畫迴圈
+            function animate() {
+                reqAnimFrame = requestAnimationFrame(animate);
+                orbitControls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
         };
-        window.copyCodeText = function() {
-            const ta = document.getElementById('export-textarea');
-            ta.select();
-            document.execCommand('copy');
+
+        window.close3DScene = function() {
+            document.getElementById('three-container').style.display = 'none';
+            if(reqAnimFrame) cancelAnimationFrame(reqAnimFrame);
         };
+
+        window.addEventListener('resize', () => {
+            if(camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
     </script>
 
-    <!-- ========================================== -->
-    <!-- 核心陣容自動生成腳本 (僅首次載入或未匯出時執行) -->
-    <!-- ========================================== -->
     <script id="init-toys">
         (function() {
             const canvas = document.getElementById('cabinet-canvas');
             const btnContainer = canvas.querySelector('.pb-4.shrink-0');
 
-            function buildCabinet(id, title, w) {
+            function buildCabinet(id, title, w, d) {
                 const cabHtml = `
-                    <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${id}">
-                        <div class="w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-1 md:py-2 border-b-4 border-[#2a1d15] relative group z-20">
-                            ${title} (寬 ${w}cm)
-                            <button onclick="deleteCabinet(this)" class="cabinet-action-btn absolute right-2 top-1 md:top-2 text-red-400 hover:text-red-600">✖</button>
-                            <button onclick="openAddShelf('${id}')" class="cabinet-action-btn absolute left-2 top-1 md:top-2 text-emerald-400 hover:text-emerald-300 text-[10px] md:text-xs">+ 層板</button>
+                    <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${id}" data-d="${d}" data-posx="" data-posz="0" data-roty="0">
+                        <div class="cabinet-header w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-2 border-b-4 border-[#2a1d15] relative z-20 cursor-pointer hover:bg-[#4d3b2f]" title="雙擊設定 3D 空間">
+                            <span class="cabinet-title-text">${title}</span> (寬 ${w} / 深 ${d})
+                            <button onclick="openAddShelf('${id}'); event.stopPropagation();" class="absolute left-2 top-2 text-emerald-400 hover:text-emerald-300 text-xs">+ 層板</button>
                         </div>
                         <div class="shelf-list flex flex-col flex-1 justify-end"></div>
                     </div>`;
-                const wrapper = document.createElement('div');
-                wrapper.innerHTML = cabHtml.trim();
+                const wrapper = document.createElement('div'); wrapper.innerHTML = cabHtml.trim();
                 canvas.insertBefore(wrapper.firstChild, btnContainer);
                 return document.getElementById(id);
             }
 
-            // 修改插入順序：改為 appendChild 讓底層先入，視覺上會在下方，後續往上疊
-            function buildShelf(cabEl, name, w, h) {
+            function buildShelf(cabEl, name, w, h, d) {
                 const shelfHtml = `
                     <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
                         <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
-                        <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 select-none pointer-events-none">${name} (高${h})</div>
-                        <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}"></div>
+                        <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 pointer-events-none">${name} (高${h})</div>
+                        <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}" data-max-d="${d}"></div>
                     </div>`;
-                const wrapper = document.createElement('div');
-                wrapper.innerHTML = shelfHtml.trim();
-                // 使用 prepend 讓後建的層板疊在上方
+                const wrapper = document.createElement('div'); wrapper.innerHTML = shelfHtml.trim();
                 cabEl.querySelector('.shelf-list').prepend(wrapper.firstChild); 
                 return cabEl.querySelector('.shelf-container:first-child .dropzone');
             }
 
-            function injectToy(zone, name, w, h, color) {
+            function injectToy(zone, name, w, h, d, color) {
                 const toyHtml = `
-                    <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] md:text-xs overflow-hidden shadow-md leading-none text-center select-none"
+                    <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] overflow-hidden shadow-md text-center select-none"
                          style="width: ${w * SCALE}px; height: ${h * SCALE}px; background-color: ${color};"
-                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}">
+                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" data-d="${d}" data-color="${color}">
                         <span class="text-content truncate px-1 pointer-events-none">${name}</span>
                     </div>`;
-                const wrapper = document.createElement('div');
-                wrapper.innerHTML = toyHtml.trim();
+                const wrapper = document.createElement('div'); wrapper.innerHTML = toyHtml.trim();
                 zone.appendChild(wrapper.firstChild);
             }
 
-            // Colors
-            const C_Ghibli = "#8fbc8f", C_Weird = "#f08080", C_Anime = "#87cefa", C_Mini = "#dda0dd";
-            const C_Girls = "#ffb6c1", C_LOTR = "#ffd700", C_Pixar = "#d3d3d3", C_Lego = "#20b2aa";
+            const C_Ghibli="#8fbc8f", C_Weird="#f08080", C_Anime="#87cefa", C_Mini="#dda0dd", C_Girls="#ffb6c1", C_LOTR="#ffd700", C_Pixar="#d3d3d3", C_Lego="#20b2aa";
 
-            const cabL = buildCabinet('cab_L', '左區 (深度21-24)', 70);
-            const cabM = buildCabinet('cab_M', '中區 (深度21-24)', 70);
-            const cabR = buildCabinet('cab_R', '右區 (深度21-24)', 70);
+            // 建立三個櫃體 (設定預設深度 24)
+            const cabL = buildCabinet('cab_L', '左區', 70, 24);
+            const cabM = buildCabinet('cab_M', '中區', 70, 24);
+            const cabR = buildCabinet('cab_R', '右區', 70, 24);
 
             // ================== 左區 ==================
-            const L0 = buildShelf(cabL, '底層', 70, 65);
-            injectToy(L0, '巴斯存錢筒', 33, 41, C_Pixar);
-            injectToy(L0, '佐格', 25, 40, C_Pixar);
+            const L0 = buildShelf(cabL, '底層', 70, 65, 999);
+            injectToy(L0, '巴斯存錢筒超大', 33, 41, 20, C_Pixar);
+            injectToy(L0, '佐格', 25, 40, 19, C_Pixar);
             
-            const L1 = buildShelf(cabL, '第1層', 70, 35);
-            injectToy(L1, 'ARAGORN', 20, 28, C_LOTR);
-            injectToy(L1, 'LURTZ', 22.3, 25.2, C_LOTR);
-            injectToy(L1, '戒靈小', 11.5, 15, C_LOTR);
+            const L1 = buildShelf(cabL, '第1層', 70, 35, 24);
+            injectToy(L1, 'ARAGORN', 20, 28, 17.1, C_LOTR);
+            injectToy(L1, 'LURTZ', 22.3, 25.2, 20, C_LOTR);
+            injectToy(L1, '戒靈小', 11.5, 15, 11.5, C_LOTR);
 
-            const L2 = buildShelf(cabL, '第2層', 70, 35);
-            injectToy(L2, '兔女郎', 10.5, 26, C_Girls);
-            injectToy(L2, '牛仔褲', 9.5, 22, C_Girls);
-            injectToy(L2, '桃子', 10, 24, C_Girls);
+            const L2 = buildShelf(cabL, '第2層', 70, 35, 24);
+            injectToy(L2, '兔女郎', 10.5, 26, 10.5, C_Girls);
+            injectToy(L2, '牛仔褲', 9.5, 22, 9.5, C_Girls);
+            injectToy(L2, '桃子', 10, 24, 10, C_Girls);
 
-            const L3 = buildShelf(cabL, '第3層', 70, 35);
-            injectToy(L3, '巴斯電子', 23, 28, C_Pixar);
-            injectToy(L3, '巴斯一番', 19, 26, C_Pixar);
+            const L3 = buildShelf(cabL, '第3層', 70, 35, 24);
+            injectToy(L3, '巴斯電子', 23, 28, 18, C_Pixar);
+            injectToy(L3, '巴斯一番', 19, 26, 15, C_Pixar);
 
-            const L4 = buildShelf(cabL, '第4層 (淺)', 70, 25);
-            injectToy(L4, 'ELEVEN', 7, 14.7, C_Mini);
-            injectToy(L4, 'HELLFIRE', 7.5, 18, C_Mini);
-            injectToy(L4, 'DUSTIN', 7.1, 14.2, C_Mini);
-            injectToy(L4, 'ROCKSTAR', 10.5, 15.6, C_Mini);
-            injectToy(L4, 'VECNA', 8.5, 16.6, C_Mini);
-            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, C_Mini);
-            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, C_Mini);
+            const L4 = buildShelf(cabL, '第4層(淺)', 70, 25, 21);
+            injectToy(L4, 'ELEVEN', 7, 14.7, 6.2, C_Mini);
+            injectToy(L4, 'HELLFIRE', 7.5, 18, 3.5, C_Mini);
+            injectToy(L4, 'DUSTIN', 7.1, 14.2, 6.2, C_Mini);
+            injectToy(L4, 'ROCKSTAR', 10.5, 15.6, 10, C_Mini);
+            injectToy(L4, 'VECNA', 8.5, 16.6, 7.1, C_Mini);
+            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, 10.9, C_Mini);
+            injectToy(L4, 'DEMOGORGON', 10.9, 16.6, 10.9, C_Mini);
 
-            const L5 = buildShelf(cabL, '第5層 (淺)', 70, 20);
-            injectToy(L5, '龍貓', 21, 7.7, C_Ghibli);
-            injectToy(L5, '小千', 21, 7.7, C_Ghibli);
+            const L5 = buildShelf(cabL, '第5層(淺)', 70, 20, 21);
+            injectToy(L5, '龍貓', 21, 7.7, 10.4, C_Ghibli);
+            injectToy(L5, '小千', 21, 7.7, 10.4, C_Ghibli);
 
-            buildShelf(cabL, '頂層擴充區', 70, 40);
+            buildShelf(cabL, '頂層擴充區', 70, 40, 21);
 
             // ================== 中區 ==================
-            const M0 = buildShelf(cabM, '底層', 70, 65);
-            injectToy(M0, 'THE JOKER', 39, 50, C_Weird);
-            injectToy(M0, '魔多戒靈', 23.5, 46, C_LOTR);
+            const M0 = buildShelf(cabM, '底層', 70, 65, 999);
+            injectToy(M0, 'THE JOKER', 39, 50, 37, C_Weird);
+            injectToy(M0, '魔多戒靈', 23.5, 46, 23.5, C_LOTR);
 
-            const M1 = buildShelf(cabM, '第1層', 70, 35);
-            injectToy(M1, 'SARUMAN大', 22.8, 25.7, C_LOTR);
-            injectToy(M1, '烙印手', 15, 25, C_LOTR);
-            injectToy(M1, '烙印骷髏', 12, 20, C_LOTR);
-            injectToy(M1, '巴風特', 14.6, 25.4, C_LOTR);
+            const M1 = buildShelf(cabM, '第1層', 70, 35, 24);
+            injectToy(M1, 'SARUMAN大', 22.8, 25.7, 17.6, C_LOTR);
+            injectToy(M1, '烙印手', 15, 25, 14, C_LOTR);
+            injectToy(M1, '烙印骷髏', 12, 20, 13, C_LOTR);
+            injectToy(M1, '巴風特', 14.6, 25.4, 12.1, C_LOTR);
 
-            const M2 = buildShelf(cabM, '第2層', 70, 35);
-            injectToy(M2, '初音NT', 22, 22, C_Anime);
-            injectToy(M2, '涼宮兔女', 9.5, 24, C_Girls);
-            injectToy(M2, '白雪', 9.5, 19, C_Girls);
+            const M2 = buildShelf(cabM, '第2層', 70, 35, 24);
+            injectToy(M2, '初音NT', 22, 22, 22, C_Anime);
+            injectToy(M2, '涼宮兔女', 9.5, 24, 9.5, C_Girls);
+            injectToy(M2, '白雪', 9.5, 19, 9.5, C_Girls);
 
-            const M3 = buildShelf(cabM, '第3層', 70, 35);
-            injectToy(M3, '綠惡魔', 24, 26, C_Lego);
-            injectToy(M3, '蜘蛛(側)', 16, 17, C_Lego);
+            const M3 = buildShelf(cabM, '第3層', 70, 35, 24);
+            injectToy(M3, '綠惡魔', 24, 26, 18, C_Lego);
+            injectToy(M3, '蜘蛛(側)', 16, 17, 28, C_Lego);
 
-            const M4 = buildShelf(cabM, '第4層 (淺)', 70, 25);
-            injectToy(M4, 'SLIMER', 8, 16.4, C_Mini);
-            injectToy(M4, 'VENKMAN', 9.1, 17.2, C_Mini);
-            injectToy(M4, 'EGON', 10.5, 17.6, C_Mini);
-            injectToy(M4, 'FACEHUGGER', 13.5, 15, C_Mini);
+            const M4 = buildShelf(cabM, '第4層(淺)', 70, 25, 21);
+            injectToy(M4, 'SLIMER', 8, 16.4, 7, C_Mini);
+            injectToy(M4, 'S.VENKMAN', 9.1, 17.2, 8.1, C_Mini);
+            injectToy(M4, 'EGON', 10.5, 17.6, 9.5, C_Mini);
+            injectToy(M4, 'FACEHUGGER', 13.5, 15, 7, C_Mini);
 
-            const M5 = buildShelf(cabM, '第5層 (淺)', 70, 20);
-            injectToy(M5, 'Pickle', 7.6, 15.2, C_Weird);
-            injectToy(M5, 'P.small', 6.4, 9.5, C_Weird);
-            injectToy(M5, '超人', 10, 16, C_Weird);
-            injectToy(M5, 'ELLO', 7.5, 11, C_Weird);
+            const M5 = buildShelf(cabM, '第5層(淺)', 70, 20, 21);
+            injectToy(M5, 'Pickle', 7.6, 15.2, 5.1, C_Weird);
+            injectToy(M5, 'P.small', 6.4, 9.5, 6.4, C_Weird);
+            injectToy(M5, '超人', 10, 16, 5, C_Weird);
+            injectToy(M5, 'ELLO', 7.5, 11, 5, C_Weird);
 
-            buildShelf(cabM, '頂層擴充區', 70, 40);
+            buildShelf(cabM, '頂層擴充區', 70, 40, 21);
 
             // ================== 右區 ==================
-            const R0 = buildShelf(cabR, '底層', 70, 65);
-            injectToy(R0, 'JARETH', 30.5, 57.5, C_Weird);
-            injectToy(R0, '巴斯殼', 20, 39, C_Pixar);
+            const R0 = buildShelf(cabR, '底層', 70, 65, 999);
+            injectToy(R0, 'JARETH AND SARAH...', 30.5, 57.5, 30.5, C_Weird);
+            injectToy(R0, '巴斯殼', 20, 39, 20, C_Pixar);
 
-            const R1 = buildShelf(cabR, '第1層', 70, 35);
-            injectToy(R1, '戴歐尼修斯', 12.7, 27.9, C_Pixar);
-            injectToy(R1, '阿芙蘿黛蒂', 8.9, 15.2, C_Pixar);
+            const R1 = buildShelf(cabR, '第1層', 70, 35, 24);
+            injectToy(R1, '戴歐尼修斯', 12.7, 27.9, 11.4, C_Pixar);
+            injectToy(R1, '阿芙蘿黛蒂', 8.9, 15.2, 8.9, C_Pixar);
 
-            const R2 = buildShelf(cabR, '第2層', 70, 35);
-            injectToy(R2, 'Gantz', 10, 25, C_Anime);
-            injectToy(R2, '狼香料', 14, 24, C_Anime);
+            const R2 = buildShelf(cabR, '第2層', 70, 35, 24);
+            injectToy(R2, 'Gantz', 10, 25, 10, C_Anime);
+            injectToy(R2, '狼香料', 14, 24, 14, C_Anime);
 
-            const R3 = buildShelf(cabR, '第3層', 70, 35);
-            injectToy(R3, '黑魔女', 19.1, 22.2, C_Ghibli);
-            injectToy(R3, '苦力怕', 10, 23, C_Lego);
+            const R3 = buildShelf(cabR, '第3層', 70, 35, 24);
+            injectToy(R3, '黑魔女', 19.1, 22.2, 10.16, C_Ghibli);
+            injectToy(R3, '苦力怕', 10, 23, 8, C_Lego);
 
-            const R4 = buildShelf(cabR, '第4層 (淺)', 70, 25);
-            injectToy(R4, 'SARUMAN', 11, 18.9, C_LOTR);
-            injectToy(R4, 'BOROMIR', 9.5, 18.5, C_LOTR);
-            injectToy(R4, 'GOLLUM', 9, 8, C_LOTR);
-            injectToy(R4, 'SARAH', 7.6, 14.7, C_LOTR);
-            injectToy(R4, 'ALITA', 8.5, 12, C_LOTR);
+            const R4 = buildShelf(cabR, '第4層(淺)', 70, 25, 21);
+            injectToy(R4, 'SARUMAN', 11, 18.9, 11, C_LOTR);
+            injectToy(R4, 'BOROMIR', 9.5, 18.5, 9.3, C_LOTR);
+            injectToy(R4, 'GOLLUM', 9, 8, 7, C_LOTR);
+            injectToy(R4, 'SARAH', 7.6, 14.7, 5, C_LOTR);
+            injectToy(R4, 'ALITA', 8.5, 12, 4.5, C_LOTR);
 
-            const R5 = buildShelf(cabR, '第5層 (淺)', 70, 20);
-            injectToy(R5, '開司', 14, 14, C_Anime);
-            injectToy(R5, '黑魔', 10, 13, C_Anime);
-            injectToy(R5, '賽車', 8, 14, C_Anime);
-            injectToy(R5, '信長', 13, 12, C_Anime);
+            const R5 = buildShelf(cabR, '第5層(淺)', 70, 20, 21);
+            injectToy(R5, '開司', 14, 14, 14, C_Anime);
+            injectToy(R5, '黑魔', 10, 13, 10, C_Anime);
+            injectToy(R5, '賽車', 8, 14, 8, C_Anime);
+            injectToy(R5, '信長', 13, 12, 11, C_Anime);
 
-            buildShelf(cabR, '頂層擴充區', 70, 40);
+            buildShelf(cabR, '頂層擴充區', 70, 40, 21);
 
             setTimeout(() => window.rebindAllEvents(), 100);
         })();
