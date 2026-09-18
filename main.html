@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統櫃 1:1 比例空間驗證圖</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --scale: 4px; /* 1cm = 4px */
+            --shelf-width: 280px; /* 70cm * 4 */
+        }
+        
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Inter', 'Microsoft JhengHei', sans-serif;
+            margin: 0;
+            overflow-x: auto;
+        }
+
+        /* 標尺網格背景：每 20px (即實體 5cm) 畫一條線 */
+        .shelf-bg {
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: bottom left;
+        }
+
+        /* 玩具方塊樣式與過渡效果 */
+        .toy-block {
+            transition: all 0.2s ease-in-out;
+            cursor: crosshair;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+        }
+        
+        .toy-block:hover {
+            filter: brightness(1.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255,255,255,0.2), inset 0 0 0 1px rgba(255,255,255,0.5);
+            z-index: 10;
+        }
+
+        /* 自訂互動式提示框 (Tooltip) */
+        #tooltip {
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease, transform 0.1s ease;
+            transform: translate(-50%, -10px);
+        }
+        
+        #tooltip.visible {
+            opacity: 1;
+            transform: translate(-50%, -40px);
+        }
+
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 flex flex-col items-center">
+
+    <!-- 標題與說明區 -->
+    <div class="text-center mb-8 max-w-3xl">
+        <h1 class="text-3xl font-bold text-amber-500 mb-3 tracking-wide">系統櫃立面配置 <span class="text-white text-2xl">絕對比例驗證圖</span></h1>
+        <p class="text-gray-400 text-sm md:text-base leading-relaxed">
+            採用 <strong class="text-amber-400">1 公分 = 4 像素</strong> 精確縮放。<br>
+            櫃體單格內徑寬度 <strong class="text-white">70 cm</strong> (圖面寬 280px)。方塊間的黑色區域即為真實的剩餘縫隙。<br>
+            <span class="inline-block mt-2 px-3 py-1 bg-gray-800 rounded-full border border-gray-700 text-amber-300 animate-pulse">👉 將滑鼠游標停留在色塊上，即可查看該玩具的詳細佔位尺寸。</span><br>
+            <span class="text-emerald-400 mt-2 block">✔️ 此程式碼已準備好，請複製並貼上至 GitHub 發布！</span>
+        </p>
+    </div>
+
+    <!-- 系統櫃本體容器 -->
+    <div class="flex gap-4 p-4 bg-[#1a1511] rounded-xl shadow-2xl border-4 border-[#3d2b1f] relative overflow-x-auto max-w-full">
+        
+        <!-- =================== 左區 (Left Column) =================== -->
+        <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424]">
+            
+            <!-- 頂層擴充區 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 160px;" data-layer="頂層擴充區 (淨高40)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">頂層擴充區 (高40)</span>
+            </div>
+            
+            <!-- 第五層 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 80px;" data-layer="第五層 (淨高20)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層 (高20/深21)</span>
+                <!-- 吉卜力專區 -->
+                <div class="toy-block bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center break-words leading-tight" 
+                     style="width: 84px; height: 30.8px;" data-info="龍貓<br>寬: 21 cm / 高: 7.7 cm">龍貓</div>
+                <div class="toy-block bg-emerald-700/80 text-white text-[10px] font-bold flex items-center justify-center break-words leading-tight" 
+                     style="width: 84px; height: 30.8px;" data-info="小千<br>寬: 21 cm / 高: 7.7 cm">小千</div>
+            </div>
+
+            <!-- 第四層 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 100px;" data-layer="第四層 (淨高25)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層 (高25/深21)</span>
+                <!-- 怪奇物語 -->
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 28px; height: 58.8px;" data-info="ELEVEN<br>寬: 7 cm / 高: 14.7 cm">EL</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30px; height: 72px;" data-info="HELLFIRE EDDIE<br>寬: 7.5 cm / 高: 18 cm">HE</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 28.4px; height: 56.8px;" data-info="DUSTIN<br>寬: 7.1 cm / 高: 14.2 cm">DU</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 42px; height: 62.4px;" data-info="ROCKSTAR EDDIE<br>寬: 10.5 cm / 高: 15.6 cm">RO</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 34px; height: 66.4px;" data-info="VECNA<br>寬: 8.5 cm / 高: 16.6 cm">VE</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 43.6px; height: 66.4px;" data-info="DEMOGORGON 1<br>寬: 10.9 cm / 高: 16.6 cm">DE</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 43.6px; height: 66.4px;" data-info="DEMOGORGON 2<br>寬: 10.9 cm / 高: 16.6 cm">DE</div>
+            </div>
+
+            <!-- 第三層 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;" data-layer="第三層 (淨高35)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層 (高35/深24)</span>
+                <!-- 巴斯光年 -->
+                <div class="toy-block bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 92px; height: 112px;" data-info="巴斯電子<br>寬: 23 cm / 高: 28 cm">巴斯電子</div>
+                <div class="toy-block bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 76px; height: 104px;" data-info="巴斯一番賞<br>寬: 19 cm / 高: 26 cm">巴斯一番</div>
+            </div>
+
+            <!-- 第二層 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;" data-layer="第二層 (淨高35)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層 (高35/深24)</span>
+                <!-- 出包王女 -->
+                <div class="toy-block bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 42px; height: 104px;" data-info="出包 闇兔女郎<br>寬: 10.5 cm / 高: 26 cm">兔女</div>
+                <div class="toy-block bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 88px;" data-info="出包 闇牛仔褲<br>寬: 9.5 cm / 高: 22 cm">牛仔</div>
+                <div class="toy-block bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 96px;" data-info="出包 桃子泳裝<br>寬: 10 cm / 高: 24 cm">桃子</div>
+            </div>
+
+            <!-- 第一層 -->
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;" data-layer="第一層 (淨高35)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層 (高35/深24)</span>
+                <!-- 魔戒 -->
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 80px; height: 112px;" data-info="ARAGORN<br>寬: 20 cm / 高: 28 cm">ARAGORN</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 89.2px; height: 100.8px;" data-info="LURTZ<br>寬: 22.3 cm / 高: 25.2 cm">LURTZ</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 46px; height: 60px;" data-info="RINGWRAITH (小)<br>寬: 11.5 cm / 高: 15 cm">小戒靈</div>
+            </div>
+
+            <!-- 底層 -->
+            <div class="shelf-bg relative flex items-end border-b-[16px] border-[#3d2b1f]" style="width: 280px; height: 260px;" data-layer="底層落地 (淨高65)">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層落地 (高65/無限制)</span>
+                <!-- 皮克斯巨獸 -->
+                <div class="toy-block bg-sky-700/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 132px; height: 164px;" data-info="超大巴斯存錢筒<br>寬: 33 cm / 高: 41 cm">
+                    <span>超大巴斯</span><span>存錢筒</span>
+                </div>
+                <div class="toy-block bg-sky-700/80 text-white text-[12px] font-bold flex items-center justify-center" style="width: 100px; height: 160px;" data-info="佐格 (Zurg)<br>寬: 25 cm / 高: 40 cm">佐格</div>
+            </div>
+        </div>
+
+        <!-- =================== 中區 (Middle Column) =================== -->
+        <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424]">
+            
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 160px;"></div>
+            
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 80px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層</span>
+                <div class="toy-block bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 30.4px; height: 60.8px;" data-info="Pickle Rick<br>寬: 7.6 cm / 高: 15.2 cm">Pi</div>
+                <div class="toy-block bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 25.6px; height: 38px;" data-info="Pickle Rick small<br>寬: 6.4 cm / 高: 9.5 cm">p.s</div>
+                <div class="toy-block bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 40px; height: 64px;" data-info="超人與狗<br>寬: 10 cm / 高: 16 cm">超人</div>
+                <div class="toy-block bg-red-500/80 text-white text-[9px] font-bold flex items-center justify-center" style="width: 30px; height: 44px;" data-info="ELLO WORM<br>寬: 7.5 cm / 高: 11 cm">EL</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 100px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層</span>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 32px; height: 65.6px;" data-info="SLIMER<br>寬: 8 cm / 高: 16.4 cm">SL</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 36.4px; height: 68.8px;" data-info="SLIMED VENKMAN<br>寬: 9.1 cm / 高: 17.2 cm">SV</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 42px; height: 70.4px;" data-info="EGON SPENGLER<br>寬: 10.5 cm / 高: 17.6 cm">EG</div>
+                <div class="toy-block bg-purple-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 54px; height: 60px;" data-info="FACEHUGGER<br>寬: 13.5 cm / 高: 15 cm">FACE</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層</span>
+                <div class="toy-block bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 96px; height: 104px;" data-info="綠惡魔樂高<br>寬: 24 cm / 高: 26 cm">綠惡魔</div>
+                <div class="toy-block bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 64px; height: 68px;" data-info="蜘蛛人樂高 (側放)<br>面寬留: 16 cm / 高: 17 cm">蜘蛛側</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層</span>
+                <div class="toy-block bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 88px; height: 88px;" data-info="初音NT<br>寬: 22 cm / 高: 22 cm">初音NT</div>
+                <div class="toy-block bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 96px;" data-info="涼宮春日 兔女郎<br>寬: 9.5 cm / 高: 24 cm">涼宮</div>
+                <div class="toy-block bg-pink-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 38px; height: 76px;" data-info="白雪公主<br>寬: 9.5 cm / 高: 19 cm">白雪</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層</span>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 91.2px; height: 102.8px;" data-info="SARUMAN M THE WHITE<br>寬: 22.8 cm / 高: 25.7 cm">大SARUMAN</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 60px; height: 100px;" data-info="Berserk hand of god<br>寬: 15 cm / 高: 25 cm">烙印手</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 48px; height: 80px;" data-info="Berserk skull<br>寬: 12 cm / 高: 20 cm">骷髏</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[11px] font-bold flex items-center justify-center leading-tight text-center" style="width: 58.4px; height: 101.6px;" data-info="Baphomet statue<br>寬: 14.6 cm / 高: 25.4 cm">巴風特</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[16px] border-[#3d2b1f]" style="width: 280px; height: 260px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層</span>
+                <div class="toy-block bg-red-600/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 156px; height: 200px;" data-info="THE JOKER<br>寬: 39 cm / 高: 50 cm">
+                    <span class="text-lg">THE JOKER</span>
+                    <span class="text-xs opacity-75">(39 x 50)</span>
+                </div>
+                <div class="toy-block bg-amber-600/80 text-white text-[12px] font-bold flex items-center justify-center text-center" style="width: 94px; height: 184px;" data-info="RINGWRAITH OF MORDOR<br>寬: 23.5 cm / 高: 46 cm">魔多<br>戒靈</div>
+            </div>
+        </div>
+
+        <!-- =================== 右區 (Right Column) =================== -->
+        <div class="flex flex-col bg-[#222] border-x-[12px] border-[#4a3424]">
+            
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 160px;"></div>
+            
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 80px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第5層</span>
+                <div class="toy-block bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 56px; height: 56px;" data-info="開司<br>寬: 14 cm / 高: 14 cm">開司</div>
+                <div class="toy-block bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 40px; height: 52px;" data-info="黑魔導女孩<br>寬: 10 cm / 高: 13 cm">黑魔</div>
+                <div class="toy-block bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 32px; height: 56px;" data-info="賽車小公主<br>寬: 8 cm / 高: 14 cm">賽車</div>
+                <div class="toy-block bg-blue-500/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 52px; height: 48px;" data-info="信長<br>寬: 13 cm / 高: 12 cm">信長</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 100px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第4層</span>
+                <div class="toy-block bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 44px; height: 75.6px;" data-info="SARUMAN THE WHITE<br>寬: 11 cm / 高: 18.9 cm">SA</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 38px; height: 74px;" data-info="BOROMIR<br>寬: 9.5 cm / 高: 18.5 cm">BO</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 36px; height: 32px;" data-info="GOLLUM<br>寬: 9 cm / 高: 8 cm">GO</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 30.4px; height: 58.8px;" data-info="SARAH AND THE WORM<br>寬: 7.6 cm / 高: 14.7 cm">SR</div>
+                <div class="toy-block bg-amber-600/80 text-white text-[10px] font-bold flex items-center justify-center" style="width: 34px; height: 48px;" data-info="ALITA DOLL<br>寬: 8.5 cm / 高: 12 cm">AL</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第3層</span>
+                <div class="toy-block bg-emerald-700/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 76.2px; height: 88.9px;" data-info="Maleficent (黑魔女)<br>寬: 19.05 cm / 高: 22.2 cm">黑魔女</div>
+                <div class="toy-block bg-teal-600/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 92px;" data-info="苦力怕樂高<br>寬: 10 cm / 高: 23 cm">苦力怕</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第2層</span>
+                <div class="toy-block bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center" style="width: 40px; height: 100px;" data-info="Gantz reika<br>寬: 10 cm / 高: 25 cm">Gantz</div>
+                <div class="toy-block bg-blue-500/80 text-white text-[11px] font-bold flex items-center justify-center text-center" style="width: 56px; height: 96px;" data-info="狼與辛香料<br>寬: 14 cm / 高: 24 cm">狼與<br>香料</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[8px] border-[#5e412f]" style="width: 280px; height: 140px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">第1層</span>
+                <div class="toy-block bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center text-center leading-tight" style="width: 50.8px; height: 111.6px;" data-info="Greek Diǒnûsos<br>寬: 12.7 cm / 高: 27.9 cm">戴歐<br>尼修斯</div>
+                <div class="toy-block bg-sky-600/80 text-white text-[11px] font-bold flex items-center justify-center text-center leading-tight" style="width: 35.6px; height: 60.8px;" data-info="Greek Aphrodite<br>寬: 8.9 cm / 高: 15.2 cm">阿芙<br>蘿黛</div>
+            </div>
+
+            <div class="shelf-bg relative flex items-end border-b-[16px] border-[#3d2b1f]" style="width: 280px; height: 260px;">
+                <span class="absolute top-1 left-2 text-[10px] text-gray-500 font-medium">底層</span>
+                <div class="toy-block bg-red-600/80 text-white text-[12px] font-bold flex flex-col items-center justify-center" style="width: 122px; height: 230px;" data-info="JARETH AND SARAH...<br>寬: 30.5 cm / 高: 57.5 cm">
+                    <span class="text-sm">JARETH</span>
+                    <span class="text-xs opacity-75">(30.5 x 57.5)</span>
+                </div>
+                <div class="toy-block bg-sky-700/80 text-white text-[12px] font-bold flex items-center justify-center text-center" style="width: 80px; height: 156px;" data-info="巴斯光年純殼<br>寬: 20 cm / 高: 39 cm">巴斯<br>純殼</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 懸停提示框 DOM 元件 -->
+    <div id="tooltip" class="absolute z-50 bg-gray-900 text-white border border-amber-500/50 rounded shadow-xl px-4 py-2 text-sm text-center"></div>
+
+    <script>
+        // 取得提示框元件
+        const tooltip = document.getElementById('tooltip');
+        
+        // 綁定所有玩具方塊的滑鼠事件
+        document.querySelectorAll('.toy-block').forEach(block => {
+            
+            // 滑鼠移入：顯示資料並更新位置
+            block.addEventListener('mouseenter', (e) => {
+                const info = e.target.getAttribute('data-info');
+                tooltip.innerHTML = info;
+                tooltip.classList.add('visible');
+                
+                // 設定初始位置
+                updateTooltipPosition(e);
+            });
+            
+            // 滑鼠移動：讓提示框跟著游標移動
+            block.addEventListener('mousemove', (e) => {
+                updateTooltipPosition(e);
+            });
+            
+            // 滑鼠移出：隱藏提示框
+            block.addEventListener('mouseleave', () => {
+                tooltip.classList.remove('visible');
+            });
+        });
+
+        // 更新提示框座標的函數
+        function updateTooltipPosition(e) {
+            // 加上 scrollX/Y 確保頁面捲動時座標依然正確
+            const x = e.pageX;
+            const y = e.pageY;
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+        }
+    </script>
+</body>
+</html>
