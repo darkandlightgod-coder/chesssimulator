@@ -12,16 +12,13 @@
         :root { --scale: 2px; }
         body { margin: 0; overflow: hidden; background-color: #121212; color: #e0e0e0; font-family: 'Inter', sans-serif; touch-action: none; user-select: none; }
         
-        /* 版面配置 */
+        /* 版面配置 (雙螢幕) */
         #app-container { display: flex; flex-direction: column; height: 100dvh; width: 100vw; position: relative; }
         #view-3d { flex: 1; min-height: 50vh; background: #0a0a0a; position: relative; z-index: 1; }
         #view-2d { flex: 1; min-height: 40vh; background-color: #1a1a1a; background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 20px 20px; background-position: center center; position: relative; overflow: hidden; border-top: 4px solid #3d2b1f; touch-action: none; transform-origin: center; }
         
-        /* 工具列設計 (極簡圖示化) */
-        #menu-btn { position: absolute; top: 15px; left: 15px; z-index: 100; background: rgba(30,30,30,0.8); color: white; border: 1px solid #555; width: 45px; height: 45px; border-radius: 8px; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.2s; }
-        #menu-btn:hover { background: #d97706; }
-        
-        #quick-tools { position: absolute; top: 15px; right: 15px; z-index: 100; display: flex; gap: 10px; }
+        /* 工具列設計 (整合於左上角) */
+        #quick-tools { position: absolute; top: 15px; left: 15px; z-index: 100; display: flex; gap: 10px; }
         .tool-btn { background: rgba(30,30,30,0.8); color: white; border: 1px solid #555; width: 45px; height: 45px; border-radius: 8px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: 0.2s; }
         .tool-btn:hover { background: #d97706; }
         .tool-btn:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -53,17 +50,18 @@
 
         @media (max-width: 768px) {
             #sidebar { width: 85%; left: -85%; }
-            .tool-btn, #menu-btn { width: 40px; height: 40px; font-size: 18px; }
+            .tool-btn { width: 40px; height: 40px; font-size: 18px; }
+            #quick-tools { gap: 6px; left: 10px; top: 10px; }
         }
     </style>
 </head>
 <body>
     <div id="app-container">
-        <!-- 全局工具列 -->
-        <button id="menu-btn" onclick="toggleMenu()" title="系統選單">☰</button>
+        <!-- 全局工具列 (整合左上角) -->
         <div id="quick-tools">
-            <button class="tool-btn" onclick="undo()" id="btn-undo" title="上一步">↩</button>
-            <button class="tool-btn" onclick="redo()" id="btn-redo" title="下一步">↪</button>
+            <button class="tool-btn" onclick="toggleMenu()" title="系統選單">☰</button>
+            <button class="tool-btn" onclick="undo()" id="btn-undo" title="上一步" disabled>↩</button>
+            <button class="tool-btn" onclick="redo()" id="btn-redo" title="下一步" disabled>↪</button>
             <button class="tool-btn" onclick="resetViews()" title="視角與比例回正">⌂</button>
         </div>
 
@@ -146,7 +144,11 @@
                 👇 2D 平面：拖曳藍點移動攝影機 | 拖曳家具 | 空白處平移畫布
             </div>
             <div id="floor-plan-container">
-                <!-- 攝影機將在此生成 -->
+                <!-- 攝影機標記 -->
+                <div id="camera-marker">
+                    <div class="dot"></div>
+                    <div class="cone"></div>
+                </div>
             </div>
         </div>
         
@@ -329,7 +331,7 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111111);
             
-            camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 5000);
+            camera = new THREE.PerspectiveCamera(50, Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight), 1, 5000);
             renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
             renderer.shadowMap.enabled = true;
@@ -419,21 +421,27 @@
 
         // --- 2. 攝影機與 2D 畫布連動 ---
         let isDraggingCamera = false;
-        const camMarker = getEl('camera-marker');
         
         function syncCameraTo2D() {
-            if (isDraggingCamera || appMode !== 'ROOM') return;
+            const camMarker = getEl('camera-marker');
+            if (!camMarker || isDraggingCamera || appMode !== 'ROOM') return;
             camMarker.style.left = (camera.position.x * SCALE_2D) + 'px';
             camMarker.style.top = (camera.position.z * SCALE_2D) + 'px';
             const angle = Math.atan2(orbitControls.target.z - camera.position.z, orbitControls.target.x - camera.position.x) * (180 / Math.PI) + 90;
             camMarker.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
         }
 
-        camMarker.addEventListener('pointerdown', (e) => { isDraggingCamera = true; e.stopPropagation(); });
+        // 需要確保在 DOM ready 後綁定事件
+        document.addEventListener('DOMContentLoaded', () => {
+            const camMarker = getEl('camera-marker');
+            if(camMarker) {
+                camMarker.addEventListener('pointerdown', (e) => { isDraggingCamera = true; e.stopPropagation(); });
+            }
+        });
+
         document.addEventListener('pointermove', (e) => {
             if (isDraggingCamera && appMode === 'ROOM') {
                 const fpRect = getEl('view-2d').getBoundingClientRect();
-                // 考量 panX, panY 與 zoom
                 const cx = ((e.clientX - fpRect.left - fpRect.width/2 - panX) / zoom2D) / SCALE_2D;
                 const cz = ((e.clientY - fpRect.top - fpRect.height/2 - panY) / zoom2D) / SCALE_2D;
                 const dx = orbitControls.target.x - camera.position.x;
@@ -446,22 +454,26 @@
 
         // 2D 畫布平移與縮放控制
         let isPanning2D = false, panStartX, panStartY;
-        const fpContainer = getEl('floor-plan-container');
         
-        getEl('view-2d').addEventListener('pointerdown', (e) => {
-            if (e.target.id === 'view-2d') { isPanning2D = true; panStartX = e.clientX - panX; panStartY = e.clientY - panY; }
+        document.addEventListener('DOMContentLoaded', () => {
+            const view2d = getEl('view-2d');
+            if(view2d) {
+                view2d.addEventListener('pointerdown', (e) => {
+                    if (e.target.id === 'view-2d') { isPanning2D = true; panStartX = e.clientX - panX; panStartY = e.clientY - panY; }
+                });
+                view2d.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    zoom2D += e.deltaY * -0.001;
+                    zoom2D = Math.min(Math.max(0.3, zoom2D), 3); // 限制縮放
+                    update2DTransform();
+                });
+            }
         });
+
         document.addEventListener('pointermove', (e) => {
             if (isPanning2D) { panX = e.clientX - panStartX; panY = e.clientY - panStartY; update2DTransform(); }
         });
         document.addEventListener('pointerup', () => isPanning2D = false);
-        
-        getEl('view-2d').addEventListener('wheel', (e) => {
-            e.preventDefault();
-            zoom2D += e.deltaY * -0.001;
-            zoom2D = Math.min(Math.max(0.3, zoom2D), 3); // 限制縮放
-            update2DTransform();
-        });
 
         // --- 3. 物件生成與建構系統 ---
         
@@ -509,12 +521,13 @@
         function forceRebuildAll() {
             // 清理 3D
             draggableMeshes.forEach(m => scene.remove(m));
-            draggableMeshes = [];
+            draggableMeshes.length = 0; // 正確清空陣列以保留參照
             
             // 清理 2D (保留相機)
+            const fpContainer = getEl('floor-plan-container');
             const cam = getEl('camera-marker');
             fpContainer.innerHTML = ''; 
-            fpContainer.appendChild(cam);
+            if(cam) fpContainer.appendChild(cam);
             getEl('toy-bin').innerHTML = ''; // 清空暫存區 UI
             
             if (appMode === 'ROOM') {
@@ -690,7 +703,7 @@
                 else touchTimer = now;
             });
 
-            fpContainer.appendChild(div);
+            getEl('floor-plan-container').appendChild(div);
         }
 
         function renderBinItem(toy) {
@@ -740,7 +753,7 @@
             const obj = findObjById(id);
             if(!obj) return;
             
-            // 如果在 ROOM 模式下雙擊系統櫃，且不是要換皮，我們讓它「進入小宇宙」
+            // 如果在 ROOM 模式下雙擊系統櫃，則「進入小宇宙」
             if (appMode === 'ROOM' && obj.type === 'cabinet') {
                 enterCabinetMode(obj.id);
                 return;
@@ -813,10 +826,8 @@
             if (obj.type === 'toy') {
                 if (obj.inBin) {
                     // 徹底刪除
-                    if(confirm('確定徹底銷毀此公仔？')) {
-                        const cab = findCabinetByToyId(activeEditId);
-                        if(cab) cab.toys = cab.toys.filter(t => t.id !== activeEditId);
-                    }
+                    const cab = findCabinetByToyId(activeEditId);
+                    if(cab) cab.toys = cab.toys.filter(t => t.id !== activeEditId);
                 } else {
                     // 退回暫存區
                     obj.inBin = true;
@@ -826,7 +837,7 @@
                 // 刪除裝潢物件或櫃體
                 if(confirm(`確定刪除 [${obj.name}] 嗎？`)) {
                     roomData.objects = roomData.objects.filter(o => o.id !== activeEditId);
-                    if(appMode === 'CABINET' && obj.id === editingCabinetId) exitCabinetMode(); // 刪除正在編輯的櫃子則強制退出
+                    if(appMode === 'CABINET' && obj.id === editingCabinetId) exitCabinetMode(); 
                 }
             }
             
@@ -881,29 +892,29 @@
             // 分發玩具的微型腳本 (玩具座標相對櫃體中心為 0)
             const makeToy = (n, w, h, d, c, x, y) => ({ id: generateId('t'), type: 'toy', name: n, w, h, d, c, color: c, x, y, z: 0, inBin: false });
             
-            // 左櫃 (X = -75) -> 玩具相對於櫃子從 -35 到 +35
-            cL.toys.push(makeToy('巴斯大', 33, 41, 20, '#ef4444', -15, 0)); cL.toys.push(makeToy('佐格', 25, 40, 18, '#ef4444', 20, 0)); // L0
-            cL.toys.push(makeToy('Aragorn', 20, 28, 15, '#f59e0b', -20, 65)); cL.toys.push(makeToy('Lurtz', 22, 25, 15, '#f59e0b', 5, 65)); cL.toys.push(makeToy('小戒靈', 11.5, 15, 10, '#f59e0b', 25, 65)); // L1
-            cL.toys.push(makeToy('闇兔女', 10.5, 26, 10, '#ec4899', -25, 100)); cL.toys.push(makeToy('闇牛仔', 9.5, 22, 10, '#ec4899', -13, 100)); cL.toys.push(makeToy('桃子', 10, 24, 10, '#ec4899', 0, 100)); // L2
-            cL.toys.push(makeToy('巴斯電', 23, 28, 15, '#22c55e', -15, 135)); cL.toys.push(makeToy('巴斯賞', 19, 26, 15, '#22c55e', 10, 135)); // L3
-            cL.toys.push(makeToy('Eleven', 7, 14.7, 7, '#d946ef', -30, 170)); cL.toys.push(makeToy('H.Eddie', 7.5, 18, 7, '#d946ef', -21, 170)); cL.toys.push(makeToy('Dustin', 7.1, 14.2, 7, '#d946ef', -13, 170)); cL.toys.push(makeToy('R.Eddie', 10.5, 15.6, 7, '#d946ef', -3, 170)); cL.toys.push(makeToy('Vecna', 8.5, 16.6, 7, '#d946ef', 8, 170)); cL.toys.push(makeToy('Demogo', 21.8, 16.6, 7, '#d946ef', 25, 170)); // L4
-            cL.toys.push(makeToy('龍貓', 21, 7.7, 10, '#10b981', -15, 195)); cL.toys.push(makeToy('小千', 21, 7.7, 10, '#10b981', 10, 195)); // L5
+            // 左櫃 (X = -75)
+            cL.toys.push(makeToy('巴斯大', 33, 41, 20, '#ef4444', -15, -117.5+2.5)); cL.toys.push(makeToy('佐格', 25, 40, 18, '#ef4444', 20, -117.5+2.5)); // L0
+            cL.toys.push(makeToy('Aragorn', 20, 28, 15, '#f59e0b', -20, -50)); cL.toys.push(makeToy('Lurtz', 22, 25, 15, '#f59e0b', 5, -50)); cL.toys.push(makeToy('小戒靈', 11.5, 15, 10, '#f59e0b', 25, -50)); // L1
+            cL.toys.push(makeToy('闇兔女', 10.5, 26, 10, '#ec4899', -25, -15)); cL.toys.push(makeToy('闇牛仔', 9.5, 22, 10, '#ec4899', -13, -15)); cL.toys.push(makeToy('桃子', 10, 24, 10, '#ec4899', 0, -15)); // L2
+            cL.toys.push(makeToy('巴斯電', 23, 28, 15, '#22c55e', -15, 20)); cL.toys.push(makeToy('巴斯賞', 19, 26, 15, '#22c55e', 10, 20)); // L3
+            cL.toys.push(makeToy('Eleven', 7, 14.7, 7, '#d946ef', -30, 55)); cL.toys.push(makeToy('H.Eddie', 7.5, 18, 7, '#d946ef', -21, 55)); cL.toys.push(makeToy('Dustin', 7.1, 14.2, 7, '#d946ef', -13, 55)); cL.toys.push(makeToy('R.Eddie', 10.5, 15.6, 7, '#d946ef', -3, 55)); cL.toys.push(makeToy('Vecna', 8.5, 16.6, 7, '#d946ef', 8, 55)); cL.toys.push(makeToy('Demogo', 21.8, 16.6, 7, '#d946ef', 25, 55)); // L4
+            cL.toys.push(makeToy('龍貓', 21, 7.7, 10, '#10b981', -15, 80)); cL.toys.push(makeToy('小千', 21, 7.7, 10, '#10b981', 10, 80)); // L5
 
             // 中櫃 (X = 0)
-            cM.toys.push(makeToy('Joker', 39, 50, 20, '#a855f7', -10, 0)); cM.toys.push(makeToy('魔多', 23.5, 46, 20, '#71717a', 25, 0)); // M0
-            cM.toys.push(makeToy('Saruman', 23, 26, 15, '#f59e0b', -20, 65)); cM.toys.push(makeToy('烙印手', 15, 25, 15, '#71717a', 0, 65)); cM.toys.push(makeToy('烙印骷髏', 12, 20, 12, '#71717a', 15, 65)); cM.toys.push(makeToy('Baphomet', 14.6, 25.4, 12, '#71717a', 30, 65)); // M1
-            cM.toys.push(makeToy('初音NT', 22, 22, 15, '#06b6d4', -20, 100)); cM.toys.push(makeToy('涼宮', 9.5, 24, 10, '#ec4899', 0, 100)); cM.toys.push(makeToy('白雪', 9.5, 19, 10, '#ec4899', 12, 100)); // M2
-            cM.toys.push(makeToy('綠惡魔', 24, 26, 15, '#14b8a6', -15, 135)); cM.toys.push(makeToy('蜘蛛側', 16, 17, 10, '#ef4444', 10, 135)); // M3
-            cM.toys.push(makeToy('Slimer', 8, 16.4, 7, '#d946ef', -25, 170)); cM.toys.push(makeToy('S.Venk', 9.1, 17.2, 7, '#d946ef', -15, 170)); cM.toys.push(makeToy('Egon', 10.5, 17.6, 7, '#d946ef', -4, 170)); cM.toys.push(makeToy('Facehug', 13.5, 15, 7, '#d946ef', 9, 170)); // M4
-            cM.toys.push(makeToy('Pickle R', 7.6, 15.2, 7, '#84cc16', -25, 195)); cM.toys.push(makeToy('Pickle s', 6.4, 9.5, 5, '#84cc16', -16, 195)); cM.toys.push(makeToy('超人狗', 10, 16, 7, '#3b82f6', -6, 195)); cM.toys.push(makeToy('ELLO', 7.5, 11, 7, '#84cc16', 5, 195)); // M5
+            cM.toys.push(makeToy('Joker', 39, 50, 20, '#a855f7', -10, -117.5+2.5)); cM.toys.push(makeToy('魔多', 23.5, 46, 20, '#71717a', 25, -117.5+2.5)); // M0
+            cM.toys.push(makeToy('Saruman', 23, 26, 15, '#f59e0b', -20, -50)); cM.toys.push(makeToy('烙印手', 15, 25, 15, '#71717a', 0, -50)); cM.toys.push(makeToy('烙印骷髏', 12, 20, 12, '#71717a', 15, -50)); cM.toys.push(makeToy('Baphomet', 14.6, 25.4, 12, '#71717a', 30, -50)); // M1
+            cM.toys.push(makeToy('初音NT', 22, 22, 15, '#06b6d4', -20, -15)); cM.toys.push(makeToy('涼宮', 9.5, 24, 10, '#ec4899', 0, -15)); cM.toys.push(makeToy('白雪', 9.5, 19, 10, '#ec4899', 12, -15)); // M2
+            cM.toys.push(makeToy('綠惡魔', 24, 26, 15, '#14b8a6', -15, 20)); cM.toys.push(makeToy('蜘蛛側', 16, 17, 10, '#ef4444', 10, 20)); // M3
+            cM.toys.push(makeToy('Slimer', 8, 16.4, 7, '#d946ef', -25, 55)); cM.toys.push(makeToy('S.Venk', 9.1, 17.2, 7, '#d946ef', -15, 55)); cM.toys.push(makeToy('Egon', 10.5, 17.6, 7, '#d946ef', -4, 55)); cM.toys.push(makeToy('Facehug', 13.5, 15, 7, '#d946ef', 9, 55)); // M4
+            cM.toys.push(makeToy('Pickle R', 7.6, 15.2, 7, '#84cc16', -25, 80)); cM.toys.push(makeToy('Pickle s', 6.4, 9.5, 5, '#84cc16', -16, 80)); cM.toys.push(makeToy('超人狗', 10, 16, 7, '#3b82f6', -6, 80)); cM.toys.push(makeToy('ELLO', 7.5, 11, 7, '#84cc16', 5, 80)); // M5
             
             // 右櫃 (X = 75)
-            cR.toys.push(makeToy('Jareth', 30.5, 57.5, 15, '#71717a', -10, 0)); cR.toys.push(makeToy('巴斯殼', 20, 39, 15, '#ef4444', 20, 0)); // R0
-            cR.toys.push(makeToy('Dionysus', 13, 28, 15, '#eab308', -15, 65)); cR.toys.push(makeToy('Aphrodite', 9, 15, 10, '#eab308', 0, 65)); // R1
-            cR.toys.push(makeToy('Gantz', 10, 25, 10, '#3b82f6', -15, 100)); cR.toys.push(makeToy('狼辛', 14, 24, 12, '#3b82f6', 0, 100)); // R2
-            cR.toys.push(makeToy('黑魔女', 19, 22, 15, '#22c55e', -10, 135)); cR.toys.push(makeToy('苦力怕', 10, 23, 10, '#22c55e', 10, 135)); // R3
-            cR.toys.push(makeToy('Saru(小)', 11, 18.9, 7, '#f59e0b', -25, 170)); cR.toys.push(makeToy('Boromir', 9.5, 18.5, 7, '#f59e0b', -13, 170)); cR.toys.push(makeToy('Gollum', 9, 8, 7, '#f59e0b', -2, 170)); cR.toys.push(makeToy('Sarah', 7.6, 14.7, 7, '#f59e0b', 8, 170)); cR.toys.push(makeToy('Alita', 8.5, 12, 7, '#3b82f6', 18, 170)); // R4
-            cR.toys.push(makeToy('開司', 14, 14, 10, '#3b82f6', -25, 195)); cR.toys.push(makeToy('黑魔導', 10, 13, 7, '#3b82f6', -11, 195)); cR.toys.push(makeToy('賽車', 8, 14, 7, '#3b82f6', 0, 195)); cR.toys.push(makeToy('信長', 13, 12, 10, '#3b82f6', 13, 195)); // R5
+            cR.toys.push(makeToy('Jareth', 30.5, 57.5, 15, '#71717a', -10, -117.5+2.5)); cR.toys.push(makeToy('巴斯殼', 20, 39, 15, '#ef4444', 20, -117.5+2.5)); // R0
+            cR.toys.push(makeToy('Dionysus', 13, 28, 15, '#eab308', -15, -50)); cR.toys.push(makeToy('Aphrodite', 9, 15, 10, '#eab308', 0, -50)); // R1
+            cR.toys.push(makeToy('Gantz', 10, 25, 10, '#3b82f6', -15, -15)); cR.toys.push(makeToy('狼辛', 14, 24, 12, '#3b82f6', 0, -15)); // R2
+            cR.toys.push(makeToy('黑魔女', 19, 22, 15, '#22c55e', -10, 20)); cR.toys.push(makeToy('苦力怕', 10, 23, 10, '#22c55e', 10, 20)); // R3
+            cR.toys.push(makeToy('Saru(小)', 11, 18.9, 7, '#f59e0b', -25, 55)); cR.toys.push(makeToy('Boromir', 9.5, 18.5, 7, '#f59e0b', -13, 55)); cR.toys.push(makeToy('Gollum', 9, 8, 7, '#f59e0b', -2, 55)); cR.toys.push(makeToy('Sarah', 7.6, 14.7, 7, '#f59e0b', 8, 55)); cR.toys.push(makeToy('Alita', 8.5, 12, 7, '#3b82f6', 18, 55)); // R4
+            cR.toys.push(makeToy('開司', 14, 14, 10, '#3b82f6', -25, 80)); cR.toys.push(makeToy('黑魔導', 10, 13, 7, '#3b82f6', -11, 80)); cR.toys.push(makeToy('賽車', 8, 14, 7, '#3b82f6', 0, 80)); cR.toys.push(makeToy('信長', 13, 12, 10, '#3b82f6', 13, 80)); // R5
 
             roomData.objects.push(cL, cM, cR);
             saveState(); forceRebuildAll();
@@ -921,7 +932,9 @@
             
             if(roomData.objects.length === 0) {
                 addRoomObj('floor'); 
-                addRoomObj('wall'); roomData.objects[1].z = -150;
+                addRoomObj('wall'); 
+                roomData.objects[1].z = -150; // 手動調整牆面位置
+                saveState(); forceRebuildAll(); // 確保初次載入也寫入歷史記錄
             } else {
                 saveState(); forceRebuildAll();
             }
@@ -930,7 +943,7 @@
         window.addEventListener('resize', () => {
             if(camera && renderer) {
                 const container = getEl('view-3d');
-                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.aspect = Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight);
                 camera.updateProjectionMatrix();
                 renderer.setSize(container.clientWidth, container.clientHeight);
             }
