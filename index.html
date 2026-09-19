@@ -330,6 +330,10 @@
                     draggedItem = block;
                     const touch = e.touches[0];
                     const rect = block.getBoundingClientRect();
+                    block.dataset.startX = touch.clientX;
+                    block.dataset.startY = touch.clientY;
+                    block.dataset.didMove = 'false';
+                    
                     touchGhost = block.cloneNode(true);
                     touchGhost.style.position = 'fixed';
                     touchGhost.style.left = rect.left + 'px'; touchGhost.style.top = rect.top + 'px';
@@ -343,6 +347,10 @@
                     if (!touchGhost) return;
                     e.preventDefault(); 
                     const touch = e.touches[0];
+                    const dx = Math.abs(touch.clientX - block.dataset.startX);
+                    const dy = Math.abs(touch.clientY - block.dataset.startY);
+                    if (dx > 5 || dy > 5) block.dataset.didMove = 'true'; // 判定為滑動而非點擊
+
                     touchGhost.style.left = (touch.clientX - touchOffsetX) + 'px';
                     touchGhost.style.top = (touch.clientY - touchOffsetY) + 'px';
                     touchGhost.style.visibility = 'hidden';
@@ -354,34 +362,47 @@
                     if (target) {
                         const dropzone = target.closest('.dropzone');
                         if (dropzone) { dropzone.classList.add('drag-over'); activeDropzone = dropzone; }
-                        else if (target.closest('#three-container')) { activeDropzone = 'three-canvas'; } // Hit 3D canvas
+                        else if (target.closest('#three-container')) { activeDropzone = 'three-canvas'; } 
                     }
                 }, {passive: false});
 
                 block.addEventListener('touchend', (e) => {
-                    if (!touchGhost) return;
-                    touchGhost.remove(); touchGhost = null; block.classList.remove('dragging');
-                    document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-                    
-                    if (activeDropzone === 'three-canvas' && is3DMode) {
-                        // Raycast drop into 3D from mobile touch
-                        const touch = e.changedTouches[0];
-                        const rect = renderer.domElement.getBoundingClientRect();
-                        mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-                        mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-                        raycaster.setFromCamera(mouse, camera);
-                        const shelfMeshes = [];
-                        scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
-                        const intersects = raycaster.intersectObjects(shelfMeshes);
-                        if(intersects.length > 0) {
-                            handleDropLogic(block, intersects[0].object.userData.domElement.querySelector('.dropzone'));
+                    let isDoubleTap = false;
+                    const currentTime = Date.now();
+                    const tapLength = currentTime - (block.dataset.lastTap || 0);
+                    // 若沒有移動且連續點擊小於 400 毫秒，判定為雙擊
+                    if (block.dataset.didMove !== 'true' && tapLength < 400 && tapLength > 0) {
+                        isDoubleTap = true;
+                        block.dataset.lastTap = 0;
+                    } else {
+                        block.dataset.lastTap = currentTime;
+                    }
+
+                    if (touchGhost) {
+                        touchGhost.remove(); touchGhost = null; block.classList.remove('dragging');
+                        document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
+                        
+                        if (activeDropzone === 'three-canvas' && is3DMode) {
+                            const touch = e.changedTouches[0];
+                            const rect = renderer.domElement.getBoundingClientRect();
+                            mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+                            mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+                            raycaster.setFromCamera(mouse, camera);
+                            const shelfMeshes = [];
+                            scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
+                            const intersects = raycaster.intersectObjects(shelfMeshes);
+                            if(intersects.length > 0) {
+                                handleDropLogic(block, intersects[0].object.userData.domElement.querySelector('.dropzone'));
+                                refresh3DIfOpen();
+                            }
+                        } else if (activeDropzone && activeDropzone !== block.parentElement) {
+                            handleDropLogic(block, activeDropzone);
                             refresh3DIfOpen();
                         }
-                    } else if (activeDropzone && activeDropzone !== block.parentElement) {
-                        handleDropLogic(block, activeDropzone);
-                        refresh3DIfOpen();
+                        draggedItem = null; activeDropzone = null;
                     }
-                    draggedItem = null; activeDropzone = null;
+
+                    if (isDoubleTap) { e.preventDefault(); e.stopPropagation(); openToyOptions(block); }
                 });
             });
 
@@ -389,17 +410,28 @@
             document.querySelectorAll('.dropzone').forEach(dropzone => {
                 if (dropzone.dataset.bound === 'true') return;
                 dropzone.dataset.bound = 'true';
-                dropzone.addEventListener('dblclick', (e) => {
+                
+                const handleShelfTap = (e) => {
                     if (e.target !== dropzone || dropzone.id === 'staging-area') return; 
                     e.preventDefault(); e.stopPropagation(); openShelfOptions(dropzone.closest('.shelf-container'));
+                };
+
+                dropzone.addEventListener('dblclick', handleShelfTap);
+                dropzone.addEventListener('touchend', (e) => {
+                    if (e.target !== dropzone || dropzone.id === 'staging-area') return;
+                    const currentTime = Date.now();
+                    const tapLength = currentTime - (dropzone.dataset.lastTap || 0);
+                    if (tapLength < 400 && tapLength > 0) {
+                        handleShelfTap(e); dropzone.dataset.lastTap = 0;
+                    } else { dropzone.dataset.lastTap = currentTime; }
                 });
+
                 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
                 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
                 dropzone.addEventListener('drop', (e) => {
                     e.preventDefault(); dropzone.classList.remove('drag-over');
                     if (draggedItem && dropzone !== draggedItem.parentElement) {
-                        handleDropLogic(draggedItem, dropzone);
-                        refresh3DIfOpen();
+                        handleDropLogic(draggedItem, dropzone); refresh3DIfOpen();
                     }
                 });
             });
@@ -408,7 +440,17 @@
             document.querySelectorAll('.cabinet-header').forEach(header => {
                 if (header.dataset.bound === 'true') return;
                 header.dataset.bound = 'true';
-                header.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); openCabinetOptions(header.closest('.cabinet-group')); });
+                
+                const handleCabTap = (e) => { e.preventDefault(); e.stopPropagation(); openCabinetOptions(header.closest('.cabinet-group')); };
+                
+                header.addEventListener('dblclick', handleCabTap);
+                header.addEventListener('touchend', (e) => {
+                    const currentTime = Date.now();
+                    const tapLength = currentTime - (header.dataset.lastTap || 0);
+                    if (tapLength < 400 && tapLength > 0) {
+                        handleCabTap(e); header.dataset.lastTap = 0;
+                    } else { header.dataset.lastTap = currentTime; }
+                });
             });
         }
 
@@ -690,19 +732,32 @@
                 scene.add(dirLight);
                 scene.add(new THREE.GridHelper(1000, 50, 0x555555, 0x333333));
 
-                // Mouse Move Tracker for 3D Drop
-                renderer.domElement.addEventListener('pointermove', (e) => {
+                // Pointer Move Tracker for 3D Drop & Interaction (整合滑鼠與觸控)
+                function updatePointer(e) {
                     const rect = renderer.domElement.getBoundingClientRect();
-                    currentMousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-                    currentMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-                });
+                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+                    if (clientX === 0 && clientY === 0) return;
+                    currentMousePos.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+                    currentMousePos.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+                }
+                renderer.domElement.addEventListener('pointermove', updatePointer);
+                renderer.domElement.addEventListener('touchmove', updatePointer, {passive: true});
 
-                // Raycast Double Click
-                let lastTap = 0;
+                // Raycast Double Click (跨平台精準雙擊)
+                let lastTap = 0, tapStartPos = {x:0, y:0};
+                renderer.domElement.addEventListener('pointerdown', (e) => {
+                    tapStartPos = {x: e.clientX, y: e.clientY};
+                });
+                
                 renderer.domElement.addEventListener('pointerup', (e) => {
-                    if (dragControls && dragControls._dragging) return; // Prevent click during drag
+                    if (dragControls && dragControls._dragging) return; // 拖曳中不觸發
+                    const dx = Math.abs(e.clientX - tapStartPos.x);
+                    const dy = Math.abs(e.clientY - tapStartPos.y);
+                    if (dx > 10 || dy > 10) return; // 判定為滑動縮放，非點擊
+
                     const now = Date.now();
-                    if (now - lastTap < 300) {
+                    if (now - lastTap < 400) {
                         e.preventDefault();
                         raycaster.setFromCamera(currentMousePos, camera);
                         const intersects = raycaster.intersectObjects(scene.children, true);
@@ -717,8 +772,8 @@
                                 }
                             }
                         }
-                    }
-                    lastTap = now;
+                        lastTap = 0;
+                    } else { lastTap = now; }
                 });
 
                 // 2D to 3D HTML Drag Drop Event
@@ -829,29 +884,68 @@
                 if (definedX === "" || definedX === null) defaultPosX += w + woodThick*2 + 5; 
             });
 
-            // Initialize 3D Drag Controls
+            // Initialize 3D Drag Controls (加入虛影與著陸光圈)
             if (dragControls) dragControls.dispose();
             dragControls = new THREE.DragControls(draggableToys, camera, renderer.domElement);
+            
+            let highlightedShelf = null;
+
             dragControls.addEventListener('dragstart', (e) => {
                 orbitControls.enabled = false;
-                e.object.material.emissive.setHex(0x333333);
+                // 1. 拖曳開始：使物件變為半透明虛影
+                e.object.material.transparent = true;
+                e.object.material.opacity = 0.6;
+                e.object.material.emissive.setHex(0x444444);
                 e.object._originalY = e.object.position.y;
             });
-            dragControls.addEventListener('drag', (e) => { e.object.position.y = e.object._originalY; /* Constrain Y */ });
-            dragControls.addEventListener('dragend', (e) => {
-                orbitControls.enabled = true;
-                e.object.material.emissive.setHex(0x000000);
-                // Raycast downwards to find shelf
+            
+            dragControls.addEventListener('drag', (e) => { 
+                e.object.position.y = e.object._originalY; // 維持 Y 軸高度
+
+                // 2. 動態追蹤：尋找虛影下方的層板並發光
                 raycaster.setFromCamera(currentMousePos, camera);
                 const shelfMeshes = [];
-                scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
+                scene.traverse(child => { if (child.userData && child.userData.type === 'shelf') shelfMeshes.push(child); });
                 const intersects = raycaster.intersectObjects(shelfMeshes);
+                
                 if (intersects.length > 0) {
-                    handleDropLogic(e.object.userData.domElement, intersects[0].object.userData.domElement.querySelector('.dropzone'));
+                    const targetShelf = intersects[0].object;
+                    if (highlightedShelf !== targetShelf) {
+                        if (highlightedShelf) highlightedShelf.material.emissive.setHex(0x000000);
+                        highlightedShelf = targetShelf;
+                        // 確保層板材質獨立，避免一次點亮所有層板
+                        if (!highlightedShelf.material.isClonedForHighlight) {
+                            highlightedShelf.material = highlightedShelf.material.clone();
+                            highlightedShelf.material.isClonedForHighlight = true;
+                        }
+                        // 給予層板暖橘色的著陸光芒
+                        highlightedShelf.material.emissive.setHex(0xaa6600);
+                    }
                 } else {
+                    if (highlightedShelf) {
+                        highlightedShelf.material.emissive.setHex(0x000000);
+                        highlightedShelf = null;
+                    }
+                }
+            });
+            
+            dragControls.addEventListener('dragend', (e) => {
+                orbitControls.enabled = true;
+                // 3. 拖曳結束：恢復實體
+                e.object.material.transparent = false;
+                e.object.material.opacity = 1.0;
+                e.object.material.emissive.setHex(0x000000);
+                
+                if (highlightedShelf) {
+                    highlightedShelf.material.emissive.setHex(0x000000);
+                    // 執行真實的換層邏輯
+                    handleDropLogic(e.object.userData.domElement, highlightedShelf.userData.domElement.querySelector('.dropzone'));
+                    highlightedShelf = null;
+                } else {
+                    // 若拖到櫃外空間，直接退回左側暫存區
                     document.getElementById('staging-area').appendChild(e.object.userData.domElement);
                 }
-                refresh3DIfOpen(); // Auto snaps to correct 2D/3D layout
+                refresh3DIfOpen(); 
             });
         };
 
