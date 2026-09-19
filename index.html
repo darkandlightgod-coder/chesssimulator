@@ -3,1092 +3,586 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>系統櫃 1:1 高擬真驗證與 3D 拖曳沙盤</title>
+    <title>3D 室內裝潢與系統櫃旗艦規劃系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/DragControls.js"></script>
     <style>
-        :root { --scale: 4px; /* 1cm = 4px (2D顯示比例) */ }
+        :root { --scale: 2px; /* 2D 平面圖比例: 1cm = 2px */ }
+        body { margin: 0; overflow: hidden; background-color: #121212; color: #e0e0e0; font-family: 'Inter', sans-serif; touch-action: none; }
         
-        body {
-            background-color: #121212;
-            color: #e0e0e0;
-            font-family: 'Inter', 'Microsoft JhengHei', sans-serif;
-            margin: 0;
-            overscroll-behavior: none;
-            touch-action: none;
-        }
-
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1a1a1a; }
-        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #777; }
-
-        /* 2D 櫃體架構 */
-        .cabinet-group { border-image-slice: 30 30 30 30 fill; border-image-repeat: round; }
-        .shelf-bg {
-            background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-            background-size: 20px 20px; 
-            background-position: bottom left;
-            transition: background-color 0.2s ease, box-shadow 0.2s ease;
-            display: flex;
-            flex-wrap: wrap; 
-            align-items: flex-end; /* 地球引力向下對齊 */
-            align-content: flex-end;
-            cursor: pointer;
-            box-sizing: border-box;
-            background-repeat: no-repeat;
-            background-size: cover;
-        }
-
-        .shelf-bg.drag-over, .staging-bg.drag-over {
-            background-color: rgba(245, 158, 11, 0.2) !important;
-            box-shadow: inset 0 0 20px rgba(245, 158, 11, 0.6) !important;
-        }
-
-        .resize-handle {
-            position: absolute;
-            top: -5px;
-            left: 0;
-            width: 100%;
-            height: 10px;
-            cursor: ns-resize;
-            z-index: 30;
-            transition: background-color 0.2s;
-        }
-        .resize-handle:hover { background-color: rgba(245, 158, 11, 0.4); }
-
-        .toy-block {
-            transition: transform 0.1s ease-in-out, filter 0.2s;
-            cursor: grab;
-            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
-            flex-shrink: 0; 
-            touch-action: none; 
-            position: relative;
-            background-repeat: no-repeat;
-            background-size: cover;
-            background-position: center;
-        }
+        /* 雙螢幕佈局 */
+        #app-container { display: flex; flex-direction: column; height: 100dvh; width: 100vw; position: relative; }
+        #view-3d { flex: 1; min-height: 40vh; background: #000; position: relative; z-index: 1; }
+        #view-2d { flex: 1; min-height: 40vh; background-color: #1a1a1a; background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 20px 20px; background-position: center center; position: relative; overflow: hidden; border-top: 4px solid #3d2b1f; touch-action: none; }
         
-        @media (hover: hover) {
-            .toy-block:hover {
-                filter: brightness(1.1);
-                transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(255,255,255,0.2), inset 0 0 0 1px rgba(255,255,255,0.5);
-                z-index: 10;
-            }
-        }
-        .toy-block:active { cursor: grabbing; }
-        .toy-block.dragging { opacity: 0.5; transform: scale(0.95); box-shadow: 0 0 15px rgba(255,255,255,0.8); z-index: 50; }
+        /* 側邊欄 (可折疊) */
+        #sidebar { position: absolute; left: 0; top: 0; height: 100%; width: 280px; background: rgba(30, 24, 20, 0.95); backdrop-filter: blur(10px); z-index: 50; transition: transform 0.3s ease; display: flex; flex-direction: column; border-right: 2px solid #4a3424; box-shadow: 5px 0 15px rgba(0,0,0,0.5); }
+        #sidebar.minimized { transform: translateX(-100%); }
+        #sidebar-toggle { position: absolute; right: -40px; top: 20px; width: 40px; height: 40px; background: #d97706; color: white; border-radius: 0 8px 8px 0; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: bold; box-shadow: 2px 0 5px rgba(0,0,0,0.3); }
+        
+        /* 2D 平面圖物件 */
+        #floor-plan-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 0; height: 0; }
+        .map-item { position: absolute; transform: translate(-50%, -50%); box-sizing: border-box; cursor: grab; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: white; text-shadow: 1px 1px 2px black; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border-radius: 2px; user-select: none; transition: filter 0.2s; }
+        .map-item:hover { filter: brightness(1.3); outline: 2px solid #d97706; z-index: 20 !important; }
+        .map-item:active { cursor: grabbing; }
+        
+        /* 2D 攝影機視角圖示 */
+        #camera-marker { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); cursor: grab; z-index: 100; user-select: none; }
+        #camera-marker .dot { width: 12px; height: 12px; background: #ef4444; border-radius: 50%; margin: auto; position: absolute; top: 9px; left: 9px; box-shadow: 0 0 10px #ef4444; }
+        #camera-marker .cone { width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent; border-bottom: 40px solid rgba(239, 68, 68, 0.4); position: absolute; top: -30px; left: -5px; pointer-events: none; }
 
-        /* 3D 與 2D 視窗切換 */
-        #main-view-container { position: relative; flex: 1; overflow: hidden; background-color: #000; }
-        #canvas-container { width: 100%; height: 100%; overflow: auto; display: block; touch-action: pan-x pan-y; background-color: #121212; }
-        #three-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; z-index: 10; }
-        #three-ui-overlay {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 20px;
-            color: #aaa; font-size: 12px; pointer-events: none; text-align: center; z-index: 20;
-        }
+        .modal { z-index: 10000; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
     </style>
 </head>
-<body class="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden">
+<body>
+    <div id="app-container">
+        <!-- 3D 視圖區 (上) -->
+        <div id="view-3d">
+            <div class="absolute top-4 right-4 bg-black/60 px-3 py-1.5 rounded-lg text-xs text-gray-300 pointer-events-none z-10 border border-gray-600">
+                👆 3D: 左鍵旋轉 | 右鍵平移 | 滾輪縮放 | 拖曳物件 | 雙擊編輯
+            </div>
+        </div>
 
+        <!-- 2D 平面圖區 (下) -->
+        <div id="view-2d">
+            <div class="absolute top-4 right-4 bg-black/60 px-3 py-1.5 rounded-lg text-xs text-gray-300 pointer-events-none z-10 border border-gray-600">
+                👇 2D: 拖曳紅點移動攝影機 | 拖曳物件 | 雙擊編輯 | 空白處拖曳平移
+            </div>
+            <div id="floor-plan-container">
+                <div id="camera-marker"><div class="cone"></div><div class="dot"></div></div>
+            </div>
+        </div>
+
+        <!-- 側邊欄 -->
+        <div id="sidebar">
+            <div id="sidebar-toggle" onclick="toggleSidebar()">☰</div>
+            <div class="p-4 border-b border-[#3d2b1f] bg-[#16120f] flex justify-between items-center">
+                <h1 class="text-base font-bold text-amber-500">裝潢與系統櫃規劃</h1>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-5">
+                
+                <!-- 空間結構 -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">🧱 裝潢與空間</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="addObj('wall')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">新增牆面</button>
+                        <button onclick="addObj('floor')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">新增木地板</button>
+                    </div>
+                </div>
+
+                <!-- 系統櫃與家具 -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">🪑 系統櫃與家具</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="addObj('cabinet')" class="bg-amber-900/50 hover:bg-amber-800 text-amber-400 border border-amber-700 text-xs py-2 rounded font-bold col-span-2">自訂系統櫃 (含層板)</button>
+                        <button onclick="addObj('wardrobe')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">大衣櫃</button>
+                        <button onclick="addObj('sofa')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">沙發</button>
+                        <button onclick="addObj('bed')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">雙人床</button>
+                        <button onclick="addObj('tv')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">電視與櫃</button>
+                        <button onclick="addObj('bathtub')" class="bg-gray-800 hover:bg-gray-700 text-xs py-2 rounded border border-gray-600">浴缸</button>
+                        <button onclick="addObj('plant')" class="bg-green-900/40 hover:bg-green-800/60 text-green-400 text-xs py-2 rounded border border-green-800">室內盆栽</button>
+                    </div>
+                </div>
+
+                <!-- 公仔暫存與生成 -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">🧸 公仔與模型</h3>
+                    <button onclick="addObj('toy')" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-bold mb-2">+ 新增公仔/擺件</button>
+                    <button onclick="restoreClassicSetup()" class="w-full bg-purple-600 hover:bg-purple-500 text-white text-xs py-2 rounded font-bold mb-2">✨ 一鍵載入 54 件經典陣容</button>
+                </div>
+
+                <!-- 系統工具 -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">⚙️ 系統工具</h3>
+                    <button onclick="exportHTML()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-xs">💾 匯出 HTML 存檔</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編輯面板 (Modal) -->
+    <div id="edit-modal" class="fixed inset-0 modal bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
+        <div class="bg-gray-800 border border-amber-600 rounded-xl p-5 max-w-sm w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg font-bold text-white mb-1" id="edit-title">編輯物件</h3>
+            <p class="text-[10px] text-gray-400 mb-4">數值單位為公分 (cm) | 點擊標籤可重新命名</p>
+            <input type="hidden" id="edit-id">
+            
+            <div class="space-y-3 mb-5">
+                <div><label class="block text-gray-400 text-[10px] mb-1">名稱</label><input type="text" id="edit-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-gray-400 text-[10px] mb-1">面寬(W)</label><input type="number" id="edit-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                    <div><label class="block text-gray-400 text-[10px] mb-1">高度(H)</label><input type="number" id="edit-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                    <div><label class="block text-gray-400 text-[10px] mb-1">深度(D)</label><input type="number" id="edit-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div><label class="block text-gray-400 text-[10px] mb-1">離地高度 (Y軸)</label><input type="number" id="edit-y" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                    <div><label class="block text-gray-400 text-[10px] mb-1">水平旋轉 (度)</label><input type="number" id="edit-rot" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1.5 text-sm"></div>
+                </div>
+                
+                <!-- 專屬櫃體層板管理器 -->
+                <div id="cabinet-shelves-manager" class="hidden mt-4 p-3 bg-gray-900 border border-gray-700 rounded">
+                    <label class="block text-amber-500 text-xs font-bold mb-2">層板間距微調 (由下而上)</label>
+                    <div id="shelves-list" class="space-y-2 max-h-40 overflow-y-auto"></div>
+                    <button onclick="addShelfToCabinet()" class="mt-2 w-full text-[10px] bg-gray-700 hover:bg-gray-600 py-1.5 rounded border border-gray-500">+ 往上新增一層</button>
+                </div>
+            </div>
+            
+            <div class="flex flex-col space-y-2">
+                <button onclick="saveObjectEdit()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-sm shadow">💾 儲存變更</button>
+                <button onclick="document.getElementById('image-uploader').click()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳真實材質/圖片</button>
+                <button onclick="deleteObject()" class="w-full py-2 border border-red-600 text-red-400 hover:bg-red-600 hover:text-white font-bold rounded text-sm">✖ 刪除物件</button>
+                <button onclick="closeModal('edit-modal')" class="w-full py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded text-sm">取消</button>
+            </div>
+        </div>
+    </div>
     <input type="file" id="image-uploader" accept="image/*" class="hidden">
 
-    <!-- 左側面板 (行動版在上方) -->
-    <div class="w-full md:w-80 lg:w-96 flex flex-col h-[40vh] md:h-full flex-shrink-0 z-30 shadow-[0_5px_15px_rgba(0,0,0,0.5)] md:shadow-[5px_0_15px_rgba(0,0,0,0.5)] bg-[#1e1814] border-b-4 md:border-b-0 md:border-r-4 border-[#3d2b1f]">
-        <div class="p-3 md:p-5 border-b border-[#3d2b1f] bg-[#16120f] flex-shrink-0">
-            <h1 class="text-base md:text-xl font-bold text-amber-500 mb-2 tracking-wide leading-snug">系統櫃立面配置<br><span class="text-white text-sm md:text-lg">1:1 絕對比例 3D 沙盤</span></h1>
-            <p class="hidden md:block text-gray-400 text-xs mb-3 leading-relaxed">
-                <strong class="text-amber-400">雙擊 (連點兩下)</strong> 玩具、層板或櫃體標題，可開啟屬性與圖片設定。<br>
-                拖曳層板頂部可微調高度，在 3D 模式下亦可直接拖拉玩具！
-            </p>
-            <div class="grid grid-cols-2 gap-2 md:gap-3 mb-2">
-                <button onclick="openModal('add-toy-modal')" class="py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded shadow-lg transition-colors">➕ 新增玩具</button>
-                <button onclick="openModal('export-modal')" class="py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded shadow-lg transition-colors">💾 匯出存檔</button>
-            </div>
-            <!-- 視圖切換按鈕 -->
-            <button id="view-toggle-btn" onclick="toggleViewMode()" class="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-sm md:text-base rounded-lg shadow-[0_0_15px_rgba(124,58,237,0.5)] transition-all flex items-center justify-center gap-2 border border-purple-400/50">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
-                <span>一鍵轉換 3D 實境</span>
-            </button>
-        </div>
-        <div class="flex-1 p-3 md:p-4 overflow-y-auto flex flex-col min-h-0" id="scroll-area">
-            <h3 class="text-amber-500/80 font-bold text-xs tracking-widest mb-2 flex items-center gap-2 flex-shrink-0">
-                📥 暫存庫存區 <span class="text-[10px] text-gray-500">(無尺寸限制)</span>
-            </h3>
-            <div id="staging-area" class="dropzone staging-bg flex-1 flex flex-wrap gap-2 content-start p-2 bg-[#110d0a] border-2 border-dashed border-[#4a3424] rounded-lg min-h-[100px]" data-name="暫存庫存區" data-max-w="9999" data-max-h="9999" data-max-d="9999">
-                <!-- 暫存玩具 -->
-            </div>
-        </div>
-    </div>
-
-    <!-- 右側共用畫布區 -->
-    <div id="main-view-container">
-        <!-- 2D 畫布 -->
-        <div id="canvas-container">
-            <div id="cabinet-canvas" class="flex gap-4 md:gap-8 items-end min-w-max pb-20 pt-10 px-4">
-                <div class="flex items-center h-full pb-4 shrink-0 btn-add-cab-wrapper">
-                    <button onclick="openModal('add-cabinet-modal')" class="w-16 h-64 border-4 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:text-amber-500 hover:border-amber-500 transition-colors group">
-                        <svg class="w-8 h-8 mb-2 transform group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                        <span class="text-xs font-bold writing-vertical-rl align-middle tracking-widest" style="writing-mode: vertical-rl;">新增櫃體</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 3D 畫布 -->
-        <div id="three-container">
-            <div id="three-ui-overlay">
-                左鍵: 旋轉/拖曳玩具 | 右鍵: 平移 | 滾輪: 縮放<br>
-                <span class="text-amber-400 font-bold mt-1 inline-block">💡 雙擊 3D 模型可開啟設定面板</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modals (z-index 10001 to overlap everything) -->
-    <!-- Error Modal -->
-    <div id="error-modal" class="fixed inset-0 z-[10001] bg-black/70 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border-2 border-red-500 rounded-xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 class="text-xl font-bold text-center text-white mb-2">空間驗證失敗</h3>
-            <p id="error-message" class="text-gray-300 text-sm text-center mb-6 leading-relaxed"></p>
-            <button onclick="closeModal('error-modal')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg">我知道了</button>
-        </div>
-    </div>
-
-    <!-- Toy Options Modal -->
-    <div id="toy-options-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-amber-500 mb-2 border-b border-gray-600 pb-2" id="opt-toy-title">玩具名稱</h3>
-            <div class="text-gray-300 text-sm mb-6 space-y-1">
-                <p>面寬 (W)： <b class="text-white text-base" id="opt-toy-w"></b> cm</p>
-                <p>高度 (H)： <b class="text-white text-base" id="opt-toy-h"></b> cm</p>
-                <p>深度 (D)： <b class="text-white text-base" id="opt-toy-d"></b> cm</p>
-            </div>
-            <div class="space-y-3">
-                <button onclick="triggerImageUpload('toy')" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳真實公仔圖片</button>
-                <button onclick="triggerToyDelete()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-sm" id="opt-toy-del-btn">✖ 退回暫存區</button>
-                <button onclick="closeModal('toy-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Shelf Options Modal -->
-    <div id="shelf-options-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-emerald-400 mb-2 border-b border-gray-600 pb-2" id="opt-shelf-title">層板名稱</h3>
-            <div class="text-gray-300 text-sm mb-4 space-y-1">
-                <p>內部寬度限制： <b class="text-white text-base" id="opt-shelf-w-txt"></b> cm</p>
-                <p>內部深度限制： <b class="text-white text-base" id="opt-shelf-d-txt"></b> cm</p>
-            </div>
-            <div class="mb-6">
-                <label class="block text-gray-300 text-xs font-bold mb-1">自訂層板淨高 (cm)</label>
-                <input type="number" id="opt-shelf-h-input" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm">
-            </div>
-            <div class="space-y-3">
-                <button onclick="saveShelfSettings()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-sm">💾 儲存層板高度</button>
-                <button onclick="triggerImageUpload('shelf')" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳層板背景圖</button>
-                <button onclick="triggerShelfDelete()" class="w-full py-2 border border-red-600 text-red-400 hover:bg-red-600 hover:text-white font-bold rounded text-sm">✖ 刪除整個層板</button>
-                <button onclick="closeModal('shelf-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Cabinet Options Modal -->
-    <div id="cabinet-options-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-amber-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-amber-500 mb-4" id="opt-cab-title">櫃體參數設定</h3>
-            <div class="space-y-4 mb-6">
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-gray-300 text-xs font-bold mb-1">內徑寬度 (cm)</label>
-                        <input type="number" id="opt-cab-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-gray-300 text-xs font-bold mb-1">內徑深度 (cm)</label>
-                        <input type="number" id="opt-cab-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="block text-gray-300 text-xs font-bold mb-1">3D 空間 X 座標</label>
-                        <input type="number" id="opt-cab-x" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm" placeholder="自動排版">
-                    </div>
-                    <div>
-                        <label class="block text-gray-300 text-xs font-bold mb-1">3D 空間 Z 座標</label>
-                        <input type="number" id="opt-cab-z" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm" placeholder="0">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-gray-300 text-xs font-bold mb-1">3D 擺放旋轉角度 (Y軸)</label>
-                    <select id="opt-cab-rot" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-1 text-sm">
-                        <option value="0">朝前 (0°)</option>
-                        <option value="-90">朝左轉 (-90°)</option>
-                        <option value="90">朝右轉 (90°)</option>
-                        <option value="180">朝後背對 (180°)</option>
-                    </select>
-                </div>
-            </div>
-            <div class="flex flex-col space-y-2">
-                <button onclick="saveCabinetSettings()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-sm">💾 儲存所有尺寸與設定</button>
-                <button onclick="triggerImageUpload('cabinet')" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm">🖼️ 上傳外框木皮/材質圖</button>
-                <button onclick="triggerCabinetDelete()" class="w-full py-2 border border-red-600 text-red-400 hover:bg-red-600 hover:text-white font-bold rounded text-sm">✖ 刪除整個櫃體</button>
-                <button onclick="closeModal('cabinet-options-modal')" class="w-full py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded text-sm">取消關閉</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Other Modals (Add Toy, Add Cabinet, Add Shelf, Export) -->
-    <div id="add-toy-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-amber-500 mb-4">✨ 新增玩具元件</h3>
-            <div class="space-y-3">
-                <div><label class="block text-gray-300 text-xs font-bold mb-1">名稱</label><input type="text" id="new-toy-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm"></div>
-                <div class="grid grid-cols-3 gap-2">
-                    <div><label class="block text-gray-300 text-xs font-bold mb-1">面寬(W)</label><input type="number" id="new-toy-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="10"></div>
-                    <div><label class="block text-gray-300 text-xs font-bold mb-1">高度(H)</label><input type="number" id="new-toy-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="20"></div>
-                    <div><label class="block text-gray-300 text-xs font-bold mb-1">深度(D)</label><input type="number" id="new-toy-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-2 py-2 text-sm" value="10"></div>
-                </div>
-                <div><label class="block text-gray-300 text-xs font-bold mb-1">代表顏色 (3D 基礎色)</label><input type="color" id="new-toy-color" class="w-full h-10 bg-gray-900 border border-gray-600 rounded cursor-pointer" value="#b91c1c"></div>
-            </div>
-            <div class="mt-6 flex justify-end gap-3">
-                <button onclick="closeModal('add-toy-modal')" class="px-4 py-2 bg-gray-700 text-white text-sm rounded">取消</button>
-                <button onclick="createNewToy()" class="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded">加入暫存區</button>
-            </div>
-        </div>
-    </div>
-    
-    <div id="add-cabinet-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-amber-500 mb-4">🪚 新增一組櫃體</h3>
-            <div class="space-y-4">
-                <div><label class="block text-gray-300 text-sm font-bold mb-1">櫃體名稱</label><input type="text" id="new-cab-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="例如: 展示櫃"></div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-gray-300 text-sm font-bold mb-1">內部淨寬 (cm)</label><input type="number" id="new-cab-w" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="70"></div>
-                    <div><label class="block text-gray-300 text-sm font-bold mb-1">內部深度 (cm)</label><input type="number" id="new-cab-d" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="24"></div>
-                </div>
-            </div>
-            <div class="mt-6 flex justify-end gap-3">
-                <button onclick="closeModal('add-cabinet-modal')" class="px-4 py-2 bg-gray-700 text-white text-sm rounded">取消</button>
-                <button onclick="createNewCabinet()" class="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded">建立</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="add-shelf-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-sm w-full shadow-2xl">
-            <h3 class="text-lg font-bold text-amber-500 mb-4">➖ 新增層板</h3>
-            <input type="hidden" id="target-cabinet-id">
-            <div class="space-y-4">
-                <div><label class="block text-gray-300 text-sm font-bold mb-1">層板名稱</label><input type="text" id="new-shelf-name" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" placeholder="例如: 第六層"></div>
-                <div><label class="block text-gray-300 text-sm font-bold mb-1">內部淨高 (cm)</label><input type="number" id="new-shelf-h" class="w-full bg-gray-900 text-white border border-gray-600 rounded px-3 py-2 text-sm" value="35"></div>
-            </div>
-            <div class="mt-6 flex justify-end gap-3">
-                <button onclick="closeModal('add-shelf-modal')" class="px-4 py-2 bg-gray-700 text-white text-sm rounded">取消</button>
-                <button onclick="createNewShelf()" class="px-4 py-2 bg-amber-600 text-white text-sm font-bold rounded">加入</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="export-modal" class="fixed inset-0 z-[10001] bg-black/80 hidden items-center justify-center backdrop-blur-sm px-4">
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-5 max-w-2xl w-full shadow-2xl flex flex-col">
-            <h3 class="text-lg font-bold text-amber-500 mb-3">💾 匯出配置與存檔</h3>
-            <button onclick="exportAsFile()" class="py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors text-sm">📥 下載 HTML 獨立執行檔 (推薦)</button>
-            <div class="mt-4 flex justify-end"><button onclick="closeModal('export-modal')" class="px-5 py-2 bg-gray-700 text-white text-sm rounded">關閉</button></div>
-        </div>
-    </div>
+    <!-- 用於存放匯出狀態的隱藏區域 -->
+    <script id="saved-state" type="application/json">[]</script>
 
     <script>
-        const SCALE = 4; // 1cm = 4px
-        let is3DMode = false;
-        let draggedItem = null, touchGhost = null, touchOffsetX = 0, touchOffsetY = 0, activeDropzone = null;
-        let activeObj = null, activeCabinet = null, uploadType = ''; 
+        // --- 核心系統與狀態 ---
+        const SCALE_2D = 2; // 2D圖 1cm = 2px
+        let scene, camera, renderer, orbitControls, dragControls;
+        let objectsData = []; // 儲存所有物件屬性
+        let draggableMeshes = []; // Three.js 可拖曳網格
+        let activeEditId = null;
+        const textureLoader = new THREE.TextureLoader();
+
+        // 輔助函式
+        const openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
+        const closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
+        const toggleSidebar = () => document.getElementById('sidebar').classList.toggle('minimized');
+        const generateId = () => 'obj_' + Math.random().toString(36).substr(2, 9);
+
+        // --- 1. 初始化 Three.js ---
+        function init3D() {
+            const container = document.getElementById('view-3d');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+            
+            camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 5000);
+            camera.position.set(0, 300, 500);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+            
+            orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+            orbitControls.target.set(0, 50, 0);
+            orbitControls.enableDamping = true;
+            orbitControls.dampingFactor = 0.05;
+
+            // 光源
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            dirLight.position.set(300, 500, 200);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+            
+            // 基礎網格與隱形地板(供射線投射)
+            const grid = new THREE.GridHelper(2000, 100, 0x444444, 0x222222);
+            grid.position.y = -0.1;
+            scene.add(grid);
+
+            // DragControls 拖曳系統
+            dragControls = new THREE.DragControls(draggableMeshes, camera, renderer.domElement);
+            dragControls.addEventListener('dragstart', (e) => { orbitControls.enabled = false; });
+            dragControls.addEventListener('drag', (e) => {
+                // 限制 Y 軸，除非是玩具需偵測層板，這裡簡化為維持初始設定的 Y
+                const obj = objectsData.find(o => o.id === e.object.userData.id);
+                if (obj && obj.type !== 'toy') e.object.position.y = obj.y + (obj.h / 2); 
+                syncTo2D(e.object.userData.id, e.object.position.x, e.object.position.z);
+            });
+            dragControls.addEventListener('dragend', (e) => { 
+                orbitControls.enabled = true; 
+                saveToState(e.object); 
+            });
+
+            // 雙擊偵測 (Raycaster)
+            let lastTap = 0;
+            renderer.domElement.addEventListener('pointerup', (e) => {
+                if (dragControls._dragging) return;
+                const now = Date.now();
+                if (now - lastTap < 400) {
+                    const rect = renderer.domElement.getBoundingClientRect();
+                    const mouse = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+                    const raycaster = new THREE.Raycaster();
+                    raycaster.setFromCamera(mouse, camera);
+                    const intersects = raycaster.intersectObjects(draggableMeshes, true);
+                    if (intersects.length > 0) {
+                        let target = intersects[0].object;
+                        while(target.parent && target.parent.type !== 'Scene' && !target.userData.id) target = target.parent;
+                        if(target.userData.id) openEditModal(target.userData.id);
+                    }
+                    lastTap = 0;
+                } else { lastTap = now; }
+            });
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            orbitControls.update();
+            renderer.render(scene, camera);
+            syncCameraTo2D();
+        }
+
+        // --- 2. 雙螢幕攝影機同步 ---
+        let isDraggingCamera = false;
+        const camMarker = document.getElementById('camera-marker');
         
-        // 3D Engine Vars
-        let scene, camera, renderer, orbitControls, reqAnimFrame = null, raycaster, mouse, currentMousePos = new THREE.Vector2();
-        let draggableToys = [], dragControls;
+        function syncCameraTo2D() {
+            if (isDraggingCamera) return;
+            camMarker.style.left = (camera.position.x * SCALE_2D) + 'px';
+            camMarker.style.top = (camera.position.z * SCALE_2D) + 'px';
+            const dx = orbitControls.target.x - camera.position.x;
+            const dz = orbitControls.target.z - camera.position.z;
+            const angle = Math.atan2(dz, dx) * (180 / Math.PI) + 90;
+            camMarker.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+        }
 
-        window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
-        window.closeModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); };
-        window.showErrorModal = (msg) => { document.getElementById('error-message').innerHTML = msg; openModal('error-modal'); };
+        camMarker.addEventListener('pointerdown', (e) => { isDraggingCamera = true; e.stopPropagation(); });
+        document.addEventListener('pointermove', (e) => {
+            if (isDraggingCamera) {
+                const fpRect = document.getElementById('view-2d').getBoundingClientRect();
+                // 考慮 2D 畫布本身的 pan 偏移
+                const cx = (e.clientX - fpRect.left - fpRect.width/2 - panX) / SCALE_2D;
+                const cz = (e.clientY - fpRect.top - fpRect.height/2 - panY) / SCALE_2D;
+                const dx = orbitControls.target.x - camera.position.x;
+                const dz = orbitControls.target.z - camera.position.z;
+                camera.position.x = cx; camera.position.z = cz;
+                orbitControls.target.set(cx + dx, orbitControls.target.y, cz + dz);
+                camMarker.style.left = (cx * SCALE_2D) + 'px';
+                camMarker.style.top = (cz * SCALE_2D) + 'px';
+            }
+        });
+        document.addEventListener('pointerup', () => { isDraggingCamera = false; });
 
-        function refresh3DIfOpen() { if(is3DMode) generate3DScene(); }
+        // 2D 畫布平移控制
+        let isPanning2D = false, panStartX, panStartY, panX = 0, panY = 0;
+        const fpContainer = document.getElementById('floor-plan-container');
+        document.getElementById('view-2d').addEventListener('pointerdown', (e) => {
+            if (e.target.id === 'view-2d') { isPanning2D = true; panStartX = e.clientX - panX; panStartY = e.clientY - panY; }
+        });
+        document.addEventListener('pointermove', (e) => {
+            if (isPanning2D) { panX = e.clientX - panStartX; panY = e.clientY - panStartY; fpContainer.style.transform = `translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px))`; }
+        });
+        document.addEventListener('pointerup', () => { isPanning2D = false; });
 
-        window.rebindAllEvents = function() {
-            // Toys
-            document.querySelectorAll('.toy-block').forEach(block => {
-                if (block.dataset.bound === 'true') return;
-                block.dataset.bound = 'true';
+        // --- 3. 核心物件生成器 ---
+        function addObj(type, customData = null) {
+            const id = customData ? customData.id : generateId();
+            let w=100, h=100, d=100, color='#ffffff', name='物件', y=0;
+
+            if (!customData) {
+                if(type === 'cabinet') { w=75; h=235; d=40; color='#5c4033'; name='系統櫃'; }
+                else if(type === 'wardrobe') { w=120; h=240; d=60; color='#d97706'; name='大衣櫃'; }
+                else if(type === 'sofa') { w=200; h=80; d=90; color='#3b82f6'; name='沙發'; }
+                else if(type === 'bed') { w=150; h=50; d=200; color='#e5e7eb'; name='雙人床'; }
+                else if(type === 'tv') { w=120; h=140; d=30; color='#1f2937'; name='電視牆櫃'; }
+                else if(type === 'bathtub') { w=160; h=60; d=80; color='#ffffff'; name='浴缸'; }
+                else if(type === 'plant') { w=40; h=120; d=40; color='#22c55e'; name='盆栽'; }
+                else if(type === 'wall') { w=300; h=280; d=15; color='#f3f4f6'; name='牆面'; }
+                else if(type === 'floor') { w=400; h=2; d=400; color='#d1d5db'; name='木地板'; y = -1;}
+                else if(type === 'toy') { w=20; h=20; d=15; color='#ef4444'; name='公仔'; y=50; }
+            }
+
+            const objData = customData || { id, type, name, w, h, d, x: 0, y, z: 0, rot: 0, color, img: null, shelves: [] };
+            
+            // 預設櫃體層板 (如果不含 customData)
+            if (type === 'cabinet' && objData.shelves.length === 0) {
+                objData.shelves = [{h: 65}, {h: 35}, {h: 35}, {h: 35}, {h: 25}, {h: 20}]; // 預設 6 層由下往上
+            }
+            
+            if(!customData) objectsData.push(objData);
+            buildObject(objData);
+        }
+
+        function buildObject(data) {
+            let mesh;
+            const mat = data.img ? new THREE.MeshStandardMaterial({map: textureLoader.load(data.img)}) : new THREE.MeshStandardMaterial({color: data.color});
+            
+            if (data.type === 'cabinet') {
+                mesh = new THREE.Group();
+                const thick = 2.5; const mWood = mat;
+                // 側板與頂底
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(thick, data.h, data.d), mWood).translateX(-data.w/2+thick/2));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(thick, data.h, data.d), mWood).translateX(data.w/2-thick/2));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, thick, data.d), mWood).translateY(data.h/2-thick/2));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, thick, data.d), mWood).translateY(-data.h/2+thick/2));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h, thick), mWood).translateZ(-data.d/2+thick/2)); // 背板
                 
-                let clickTimer = null;
-                const handleDoubleTap = (e) => {
-                    e.preventDefault(); e.stopPropagation();
-                    openToyOptions(block);
-                };
-
-                // Mouse Double Click
-                block.addEventListener('dblclick', handleDoubleTap);
-                
-                // Drag and Drop (Mouse)
-                block.addEventListener('dragstart', () => { draggedItem = block; setTimeout(() => block.classList.add('dragging'), 0); });
-                block.addEventListener('dragend', () => { block.classList.remove('dragging'); draggedItem = null; document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over')); });
-                
-                // Touch Events (including Double Tap simulation)
-                block.addEventListener('touchstart', (e) => {
-                    if(e.touches.length > 1) return;
-                    
-                    // Double Tap Logic for Touch
-                    if (clickTimer == null) {
-                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
-                    } else {
-                        clearTimeout(clickTimer); clickTimer = null;
-                        handleDoubleTap(e);
-                        return; // 雙擊後不啟動拖曳
-                    }
-
-                    draggedItem = block;
-                    const touch = e.touches[0];
-                    const rect = block.getBoundingClientRect();
-                    block.dataset.startX = touch.clientX;
-                    block.dataset.startY = touch.clientY;
-                    block.dataset.didMove = 'false';
-                    
-                    touchGhost = block.cloneNode(true);
-                    touchGhost.style.position = 'fixed';
-                    touchGhost.style.left = rect.left + 'px'; touchGhost.style.top = rect.top + 'px';
-                    touchGhost.style.opacity = '0.7'; touchGhost.style.pointerEvents = 'none'; touchGhost.style.zIndex = '99999';
-                    document.body.appendChild(touchGhost);
-                    block.classList.add('dragging');
-                    touchOffsetX = touch.clientX - rect.left; touchOffsetY = touch.clientY - rect.top;
-                }, {passive: true});
-
-                block.addEventListener('touchmove', (e) => {
-                    if (!touchGhost) return;
-                    e.preventDefault(); 
-                    const touch = e.touches[0];
-                    const dx = Math.abs(touch.clientX - block.dataset.startX);
-                    const dy = Math.abs(touch.clientY - block.dataset.startY);
-                    if (dx > 5 || dy > 5) block.dataset.didMove = 'true';
-
-                    touchGhost.style.left = (touch.clientX - touchOffsetX) + 'px';
-                    touchGhost.style.top = (touch.clientY - touchOffsetY) + 'px';
-                    touchGhost.style.visibility = 'hidden';
-                    const target = document.elementFromPoint(touch.clientX, touch.clientY);
-                    touchGhost.style.visibility = 'visible';
-                    
-                    document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-                    activeDropzone = null;
-                    if (target) {
-                        const dropzone = target.closest('.dropzone');
-                        if (dropzone) { dropzone.classList.add('drag-over'); activeDropzone = dropzone; }
-                        else if (target.closest('#three-container')) { activeDropzone = 'three-canvas'; } 
-                    }
-                }, {passive: false});
-
-                block.addEventListener('touchend', (e) => {
-                    if (touchGhost) {
-                        touchGhost.remove(); touchGhost = null; block.classList.remove('dragging');
-                        document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
-                        
-                        if (block.dataset.didMove === 'true') {
-                            if (activeDropzone === 'three-canvas' && is3DMode) {
-                                const touch = e.changedTouches[0];
-                                const rect = renderer.domElement.getBoundingClientRect();
-                                mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-                                mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-                                raycaster.setFromCamera(mouse, camera);
-                                const shelfMeshes = [];
-                                scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
-                                const intersects = raycaster.intersectObjects(shelfMeshes);
-                                if(intersects.length > 0) {
-                                    handleDropLogic(block, intersects[0].object.userData.domElement.querySelector('.dropzone'));
-                                    refresh3DIfOpen();
-                                }
-                            } else if (activeDropzone && activeDropzone !== block.parentElement) {
-                                handleDropLogic(block, activeDropzone);
-                                refresh3DIfOpen();
-                            }
-                        }
-                        draggedItem = null; activeDropzone = null;
+                // 動態層板 (由下往上推算)
+                let currY = -data.h/2 + thick;
+                data.shelves.forEach(shelf => {
+                    currY += parseFloat(shelf.h);
+                    if(currY < data.h/2 - thick) {
+                        const sMesh = new THREE.Mesh(new THREE.BoxGeometry(data.w - thick*2, thick, data.d), mWood);
+                        sMesh.position.y = currY;
+                        mesh.add(sMesh);
                     }
                 });
+            } else if (data.type === 'sofa') {
+                mesh = new THREE.Group();
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h*0.4, data.d), mat).translateY(-data.h*0.3));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h, data.d*0.2), mat).translateZ(-data.d*0.4));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w*0.1, data.h*0.7, data.d), mat).translateX(-data.w*0.45).translateY(-data.h*0.15));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w*0.1, data.h*0.7, data.d), mat).translateX(data.w*0.45).translateY(-data.h*0.15));
+            } else if (data.type === 'bed') {
+                mesh = new THREE.Group();
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h*0.3, data.d), new THREE.MeshStandardMaterial({color: 0x8b5a2b})).translateY(-data.h*0.35));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w*0.95, data.h*0.4, data.d*0.95), mat));
+                mesh.add(new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h, data.d*0.1), new THREE.MeshStandardMaterial({color: 0x8b5a2b})).translateZ(-data.d*0.45));
+            } else if (data.type === 'plant') {
+                mesh = new THREE.Group();
+                mesh.add(new THREE.Mesh(new THREE.CylinderGeometry(data.w*0.4, data.w*0.3, data.h*0.3), new THREE.MeshStandardMaterial({color: 0x884422})).translateY(-data.h*0.35));
+                mesh.add(new THREE.Mesh(new THREE.IcosahedronGeometry(data.w*0.6, 1), mat).translateY(data.h*0.2));
+            } else {
+                mesh = new THREE.Mesh(new THREE.BoxGeometry(data.w, data.h, data.d), mat);
+            }
+
+            // 處理所有子物件陰影
+            mesh.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+            
+            mesh.position.set(data.x, data.y + data.h/2, data.z);
+            mesh.rotation.y = THREE.MathUtils.degToRad(data.rot);
+            mesh.userData = { id: data.id };
+            scene.add(mesh);
+            draggableMeshes.push(mesh);
+
+            // --- 建立 2D DOM ---
+            const div = document.createElement('div');
+            div.id = '2d_' + data.id;
+            div.className = 'map-item';
+            div.style.width = (data.w * SCALE_2D) + 'px';
+            div.style.height = (data.d * SCALE_2D) + 'px';
+            div.style.left = (data.x * SCALE_2D) + 'px';
+            div.style.top = (data.z * SCALE_2D) + 'px';
+            div.style.backgroundColor = data.img ? '#555' : data.color;
+            if (data.type === 'toy') div.style.borderRadius = '50%'; // 玩具在平面圖顯示圓形
+            if(data.img) { div.style.backgroundImage = `url(${data.img})`; div.style.backgroundSize = 'cover'; }
+            div.style.transform = `translate(-50%, -50%) rotate(${data.rot}deg)`;
+            div.innerText = data.name.substring(0, 4);
+            
+            // 2D 拖曳
+            let isDragging = false, startX, startZ, origLeft, origTop;
+            div.addEventListener('pointerdown', (e) => {
+                isDragging = true; startX = e.clientX; startZ = e.clientY;
+                origLeft = parseFloat(div.style.left); origTop = parseFloat(div.style.top);
+                orbitControls.enabled = false;
+                div.setPointerCapture(e.pointerId);
+                e.stopPropagation();
+            });
+            div.addEventListener('pointermove', (e) => {
+                if(!isDragging) return;
+                const newX = (origLeft + (e.clientX - startX)) / SCALE_2D; 
+                const newZ = (origTop + (e.clientY - startZ)) / SCALE_2D;
+                div.style.left = (newX * SCALE_2D) + 'px'; div.style.top = (newZ * SCALE_2D) + 'px';
+                mesh.position.x = newX; mesh.position.z = newZ; // 即時同步 3D
+            });
+            div.addEventListener('pointerup', (e) => {
+                isDragging = false; orbitControls.enabled = true;
+                const obj = objectsData.find(o => o.id === data.id);
+                if(obj) { obj.x = mesh.position.x; obj.z = mesh.position.z; }
             });
 
-            // Dropzones (Shelves & Staging)
-            document.querySelectorAll('.dropzone').forEach(dropzone => {
-                if (dropzone.dataset.bound === 'true') return;
-                dropzone.dataset.bound = 'true';
-                
-                let clickTimer = null;
-                const handleShelfTap = (e) => {
-                    if (e.target !== dropzone || dropzone.id === 'staging-area') return; 
-                    e.preventDefault(); e.stopPropagation(); openShelfOptions(dropzone.closest('.shelf-container'));
-                };
+            // 雙擊編輯 (相容手機)
+            let clickTimer = null;
+            div.addEventListener('pointerup', (e) => {
+                if(Math.abs(e.clientX - startX)>5) return; 
+                if (clickTimer == null) { clickTimer = setTimeout(() => { clickTimer = null; }, 300); } 
+                else { clearTimeout(clickTimer); clickTimer = null; openEditModal(data.id); }
+            });
 
-                dropzone.addEventListener('dblclick', handleShelfTap);
-                dropzone.addEventListener('touchstart', (e) => {
-                    if (clickTimer == null) {
-                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
-                    } else {
-                        clearTimeout(clickTimer); clickTimer = null;
-                        handleShelfTap(e);
-                    }
-                }, {passive: true});
+            document.getElementById('floor-plan-container').appendChild(div);
+        }
 
-                dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
-                dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
-                dropzone.addEventListener('drop', (e) => {
-                    e.preventDefault(); dropzone.classList.remove('drag-over');
-                    if (draggedItem && dropzone !== draggedItem.parentElement) {
-                        handleDropLogic(draggedItem, dropzone); refresh3DIfOpen();
-                    }
+        function syncTo2D(id, x, z) {
+            const div = document.getElementById('2d_' + id);
+            if(div) { div.style.left = (x * SCALE_2D) + 'px'; div.style.top = (z * SCALE_2D) + 'px'; }
+        }
+
+        function saveToState(mesh) {
+            const obj = objectsData.find(o => o.id === mesh.userData.id);
+            if(obj) { obj.x = mesh.position.x; obj.z = mesh.position.z; }
+        }
+
+        // --- 4. 編輯與設定面板 ---
+        function openEditModal(id) {
+            const obj = objectsData.find(o => o.id === id);
+            if(!obj) return;
+            activeEditId = id;
+            document.getElementById('edit-title').innerText = obj.name + ' 設定';
+            document.getElementById('edit-name').value = obj.name;
+            document.getElementById('edit-w').value = obj.w;
+            document.getElementById('edit-h').value = obj.h;
+            document.getElementById('edit-d').value = obj.d;
+            document.getElementById('edit-y').value = obj.y;
+            document.getElementById('edit-rot').value = obj.rot;
+            
+            const shelfManager = document.getElementById('cabinet-shelves-manager');
+            const list = document.getElementById('shelves-list');
+            list.innerHTML = '';
+            if (obj.type === 'cabinet') {
+                shelfManager.classList.remove('hidden');
+                obj.shelves.forEach((s, idx) => {
+                    list.innerHTML += `<div class="flex items-center gap-2"><span class="text-white text-[10px] w-12">第${idx+1}層</span><input type="number" value="${s.h}" class="flex-1 bg-gray-800 text-white border border-gray-600 rounded px-1 py-1 text-xs" onchange="updateShelf(${idx}, this.value)"><button onclick="removeShelf(${idx})" class="text-red-500 text-xs px-2 py-1 bg-gray-800 rounded border border-red-900">刪</button></div>`;
                 });
-            });
-
-            // Cabinets
-            document.querySelectorAll('.cabinet-header').forEach(header => {
-                if (header.dataset.bound === 'true') return;
-                header.dataset.bound = 'true';
-                
-                let clickTimer = null;
-                const handleCabTap = (e) => { e.preventDefault(); e.stopPropagation(); openCabinetOptions(header.closest('.cabinet-group')); };
-                
-                header.addEventListener('dblclick', handleCabTap);
-                header.addEventListener('touchstart', (e) => {
-                    if (clickTimer == null) {
-                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
-                    } else {
-                        clearTimeout(clickTimer); clickTimer = null;
-                        handleCabTap(e);
-                    }
-                }, {passive: true});
-            });
-        }
-
-        window.handleDropLogic = function(item, dropzone) {
-            const maxW = parseFloat(dropzone.getAttribute('data-max-w')) || 9999;
-            const maxH = parseFloat(dropzone.getAttribute('data-max-h')) || 9999;
-            const maxD = parseFloat(dropzone.getAttribute('data-max-d')) || 9999;
-            const zoneName = dropzone.getAttribute('data-name') || '此區塊';
-            const itemW = parseFloat(item.getAttribute('data-w'));
-            const itemH = parseFloat(item.getAttribute('data-h'));
-            const itemD = parseFloat(item.getAttribute('data-d')) || itemW; 
-            const itemName = item.getAttribute('data-name');
-
-            if (itemH > maxH) return showErrorModal(`【高度不足】<br>「${itemName}」高度 <b>${itemH}</b> cm<br>「${zoneName}」淨高限制 <b>${maxH}</b> cm`);
-            if (itemD > maxD) return showErrorModal(`【深度不足】<br>「${itemName}」深度 <b>${itemD}</b> cm<br>「${zoneName}」深度限制 <b>${maxD}</b> cm`);
-
-            const currentItems = Array.from(dropzone.querySelectorAll('.toy-block'));
-            const currentUsedW = currentItems.reduce((sum, curr) => sum + parseFloat(curr.getAttribute('data-w')), 0);
-            if (itemW > (maxW - currentUsedW)) return showErrorModal(`【面寬不足】<br>「${itemName}」面寬 <b>${itemW}</b> cm<br>剩餘面寬僅 <b>${(maxW - currentUsedW).toFixed(1)}</b> cm`);
+            } else { shelfManager.classList.add('hidden'); }
             
-            dropzone.appendChild(item);
+            openModal('edit-modal');
         }
 
-        // Modals & Data Handling
-        window.openToyOptions = function(toy) {
-            activeObj = toy;
-            document.getElementById('opt-toy-title').innerText = toy.getAttribute('data-name');
-            document.getElementById('opt-toy-w').innerText = toy.getAttribute('data-w');
-            document.getElementById('opt-toy-h').innerText = toy.getAttribute('data-h');
-            document.getElementById('opt-toy-d').innerText = toy.getAttribute('data-d') || toy.getAttribute('data-w');
-            const delBtn = document.getElementById('opt-toy-del-btn');
-            if (activeObj.parentElement.id === 'staging-area') { delBtn.innerText = "✖ 永久刪除玩具"; delBtn.classList.replace('bg-red-600', 'bg-red-800'); }
-            else { delBtn.innerText = "✖ 退回暫存區"; delBtn.classList.replace('bg-red-800', 'bg-red-600'); }
-            openModal('toy-options-modal');
-        }
+        function updateShelf(idx, val) { const obj = objectsData.find(o => o.id === activeEditId); if(obj) obj.shelves[idx].h = val; }
+        function addShelfToCabinet() { const obj = objectsData.find(o => o.id === activeEditId); if(obj) obj.shelves.push({h: 30}); openEditModal(activeEditId); }
+        function removeShelf(idx) { const obj = objectsData.find(o => o.id === activeEditId); if(obj) obj.shelves.splice(idx, 1); openEditModal(activeEditId); }
 
-        window.triggerToyDelete = function() {
-            if(!activeObj) return;
-            const staging = document.getElementById('staging-area');
-            if (activeObj.parentElement === staging) activeObj.remove();
-            else staging.appendChild(activeObj);
-            closeModal('toy-options-modal'); refresh3DIfOpen();
-        }
-
-        window.openShelfOptions = function(shelf) {
-            activeObj = shelf;
-            const dropzone = shelf.querySelector('.dropzone');
-            document.getElementById('opt-shelf-title').innerText = dropzone.getAttribute('data-name');
-            document.getElementById('opt-shelf-w-txt').innerText = dropzone.getAttribute('data-max-w');
-            document.getElementById('opt-shelf-d-txt').innerText = dropzone.getAttribute('data-max-d');
-            document.getElementById('opt-shelf-h-input').value = dropzone.getAttribute('data-max-h');
-            openModal('shelf-options-modal');
-        }
-
-        window.saveShelfSettings = function() {
-            if(!activeObj) return;
-            const newH = parseFloat(document.getElementById('opt-shelf-h-input').value) || 35;
-            const dropzone = activeObj.querySelector('.dropzone');
-            let maxToyH = 10;
-            dropzone.querySelectorAll('.toy-block').forEach(t => maxToyH = Math.max(maxToyH, parseFloat(t.getAttribute('data-h'))));
-            if (newH < maxToyH) return showErrorModal(`【修改失敗】<br>層板內已有高度為 <b>${maxToyH}</b> cm 的玩具，淨高不可低於此數值。`);
+        function saveObjectEdit() {
+            if(!activeEditId) return;
+            const obj = objectsData.find(o => o.id === activeEditId);
+            obj.name = document.getElementById('edit-name').value || '物件';
+            obj.w = parseFloat(document.getElementById('edit-w').value) || 10;
+            obj.h = parseFloat(document.getElementById('edit-h').value) || 10;
+            obj.d = parseFloat(document.getElementById('edit-d').value) || 10;
+            obj.y = parseFloat(document.getElementById('edit-y').value) || 0;
+            obj.rot = parseFloat(document.getElementById('edit-rot').value) || 0;
             
-            activeObj.style.height = (newH * SCALE) + 'px';
-            dropzone.setAttribute('data-max-h', newH);
-            activeObj.querySelector('.shelf-label').innerText = `${dropzone.getAttribute('data-name')} (高${newH})`;
-            closeModal('shelf-options-modal'); refresh3DIfOpen();
+            rebuildObject(obj);
+            closeModal('edit-modal');
         }
 
-        window.triggerShelfDelete = function() {
-            if(!activeObj || !confirm("確定要刪除此層板嗎？裡面的玩具會退回暫存區。")) return;
-            const dropzone = activeObj.querySelector('.dropzone');
-            const staging = document.getElementById('staging-area');
-            dropzone.querySelectorAll('.toy-block').forEach(toy => staging.appendChild(toy));
-            activeObj.remove(); closeModal('shelf-options-modal'); refresh3DIfOpen();
+        function deleteObject() {
+            if(!activeEditId || !confirm('確定刪除此物件？')) return;
+            const meshIdx = draggableMeshes.findIndex(m => m.userData.id === activeEditId);
+            if(meshIdx > -1) { scene.remove(draggableMeshes[meshIdx]); draggableMeshes.splice(meshIdx, 1); }
+            const div = document.getElementById('2d_' + activeEditId); if(div) div.remove();
+            objectsData = objectsData.filter(o => o.id !== activeEditId);
+            closeModal('edit-modal');
         }
 
-        window.openCabinetOptions = function(cab) {
-            activeCabinet = cab;
-            document.getElementById('opt-cab-title').innerText = cab.querySelector('.cabinet-title-text').innerText + " 設定";
-            document.getElementById('opt-cab-w').value = cab.getAttribute('data-w') || 70;
-            document.getElementById('opt-cab-d').value = cab.getAttribute('data-d') || 24;
-            document.getElementById('opt-cab-x').value = cab.getAttribute('data-posx') || '';
-            document.getElementById('opt-cab-z').value = cab.getAttribute('data-posz') || 0;
-            document.getElementById('opt-cab-rot').value = cab.getAttribute('data-roty') || 0;
-            openModal('cabinet-options-modal');
+        function rebuildObject(objData) {
+            const meshIdx = draggableMeshes.findIndex(m => m.userData.id === objData.id);
+            if(meshIdx > -1) { scene.remove(draggableMeshes[meshIdx]); draggableMeshes.splice(meshIdx, 1); }
+            const div = document.getElementById('2d_' + objData.id); if(div) div.remove();
+            buildObject(objData);
         }
 
-        window.saveCabinetSettings = function() {
-            if(!activeCabinet) return;
-            const w = document.getElementById('opt-cab-w').value;
-            const d = document.getElementById('opt-cab-d').value;
-            activeCabinet.setAttribute('data-w', w);
-            activeCabinet.setAttribute('data-d', d);
-            activeCabinet.setAttribute('data-posx', document.getElementById('opt-cab-x').value);
-            activeCabinet.setAttribute('data-posz', document.getElementById('opt-cab-z').value);
-            activeCabinet.setAttribute('data-roty', document.getElementById('opt-cab-rot').value);
-            
-            activeCabinet.querySelector('.cabinet-title-text').nextSibling.nodeValue = ` (寬 ${w} / 深 ${d})`;
-            activeCabinet.querySelectorAll('.shelf-container').forEach(sh => {
-                sh.style.width = (w * SCALE) + 'px';
-                const dz = sh.querySelector('.dropzone');
-                dz.setAttribute('data-max-w', w);
-                dz.setAttribute('data-max-d', d);
-                // Evict toys if width shrunk too much
-                const currentItems = Array.from(dz.querySelectorAll('.toy-block'));
-                let currentUsedW = 0;
-                currentItems.forEach(item => {
-                    currentUsedW += parseFloat(item.getAttribute('data-w'));
-                    if (currentUsedW > w) {
-                        document.getElementById('staging-area').appendChild(item);
-                        currentUsedW -= parseFloat(item.getAttribute('data-w'));
-                    }
-                });
-            });
-            closeModal('cabinet-options-modal'); refresh3DIfOpen();
-        }
-
-        window.triggerCabinetDelete = function() {
-            if(!activeCabinet || !confirm("確定要刪除整個櫃體嗎？玩具將退回暫存區。")) return;
-            const staging = document.getElementById('staging-area');
-            activeCabinet.querySelectorAll('.toy-block').forEach(toy => staging.appendChild(toy));
-            activeCabinet.remove(); closeModal('cabinet-options-modal'); refresh3DIfOpen();
-        }
-
-        window.triggerImageUpload = function(type) { uploadType = type; document.getElementById('image-uploader').click(); }
         document.getElementById('image-uploader').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file || !activeEditId) return;
             const reader = new FileReader();
             reader.onload = function(event) {
-                const imgUrl = event.target.result;
-                if (uploadType === 'toy' && activeObj) {
-                    activeObj.style.backgroundImage = `url(${imgUrl})`; activeObj.setAttribute('data-img', imgUrl);
-                    const txt = activeObj.querySelector('.text-content'); if(txt) txt.style.opacity = '0';
-                    activeObj.style.backgroundColor = 'transparent'; activeObj.style.boxShadow = 'none';
-                    closeModal('toy-options-modal');
-                } else if (uploadType === 'shelf' && activeObj) {
-                    const dz = activeObj.querySelector('.dropzone');
-                    dz.style.backgroundImage = `url(${imgUrl})`; dz.setAttribute('data-img', imgUrl);
-                    closeModal('shelf-options-modal');
-                } else if (uploadType === 'cabinet' && activeCabinet) {
-                    activeCabinet.style.borderImage = `url(${imgUrl}) 30 round`;
-                    activeCabinet.setAttribute('data-frame-img', imgUrl);
-                    closeModal('cabinet-options-modal');
-                }
-                refresh3DIfOpen();
+                const obj = objectsData.find(o => o.id === activeEditId);
+                obj.img = event.target.result;
+                rebuildObject(obj);
             };
             reader.readAsDataURL(file); e.target.value = '';
         });
 
-        // Shelf Resizing Drag Handle
-        let isResizing = false, resizeTarget = null, startY = 0, startHeight = 0;
-        window.startResizeShelf = function(e, handle) {
-            e.preventDefault(); e.stopPropagation();
-            isResizing = true; resizeTarget = handle.closest('.shelf-container');
-            startY = e.clientY || (e.touches && e.touches[0].clientY);
-            startHeight = parseFloat(resizeTarget.style.height);
-            document.addEventListener('mousemove', doResize); document.addEventListener('mouseup', stopResize);
-            document.addEventListener('touchmove', doResize, {passive: false}); document.addEventListener('touchend', stopResize);
-        }
-        function doResize(e) {
-            if (!isResizing) return;
-            e.preventDefault();
-            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            let newHeightPx = startHeight + (startY - clientY);
-            const dropzone = resizeTarget.querySelector('.dropzone');
-            let maxToyH = 10; 
-            dropzone.querySelectorAll('.toy-block').forEach(t => maxToyH = Math.max(maxToyH, parseFloat(t.getAttribute('data-h'))));
-            if (newHeightPx < maxToyH * SCALE) newHeightPx = maxToyH * SCALE; 
-            resizeTarget.style.height = newHeightPx + 'px';
-            const newHeightCm = Math.round(newHeightPx / SCALE);
-            dropzone.setAttribute('data-max-h', newHeightCm);
-            resizeTarget.querySelector('.shelf-label').innerText = `${dropzone.getAttribute('data-name')} (高${newHeightCm})`;
-        }
-        function stopResize() {
-            isResizing = false; resizeTarget = null;
-            document.removeEventListener('mousemove', doResize); document.removeEventListener('mouseup', stopResize);
-            document.removeEventListener('touchmove', doResize); document.removeEventListener('touchend', stopResize);
-            refresh3DIfOpen();
+        // --- 5. 匯出與還原機制 (HTML 存檔) ---
+        function exportHTML() {
+            document.getElementById('saved-state').textContent = JSON.stringify(objectsData);
+            const htmlContent = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'cabinet_design_export.html';
+            a.click();
         }
 
-        // Creators
-        window.openAddShelf = function(cabId) { document.getElementById('target-cabinet-id').value = cabId; openModal('add-shelf-modal'); };
-        window.createNewCabinet = function() {
-            const name = document.getElementById('new-cab-name').value || '新櫃體';
-            const w = parseFloat(document.getElementById('new-cab-w').value) || 70;
-            const d = parseFloat(document.getElementById('new-cab-d').value) || 24;
-            const cabId = 'cab_' + Date.now();
-            const cabHtml = `
-                <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-t-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${cabId}" data-w="${w}" data-d="${d}" data-posx="" data-posz="0" data-roty="0">
-                    <div class="cabinet-header w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-2 border-b-4 border-[#2a1d15] relative z-20 cursor-pointer hover:bg-[#4d3b2f]" title="雙擊設定尺寸與3D參數">
-                        <span class="cabinet-title-text">${name}</span> (寬 ${w} / 深 ${d})
-                        <button onclick="openAddShelf('${cabId}'); event.stopPropagation();" class="absolute left-2 top-2 text-emerald-400 hover:text-emerald-300 text-xs">+ 層板</button>
-                    </div>
-                    <div class="shelf-list flex flex-col flex-1 justify-end"></div>
-                </div>`;
-            const wrapper = document.createElement('div'); wrapper.innerHTML = cabHtml.trim();
-            const canvas = document.getElementById('cabinet-canvas');
-            canvas.insertBefore(wrapper.firstChild, canvas.querySelector('.btn-add-cab-wrapper'));
-            rebindAllEvents(); closeModal('add-cabinet-modal'); refresh3DIfOpen();
-        };
-
-        window.createNewShelf = function() {
-            const cab = document.getElementById(document.getElementById('target-cabinet-id').value);
-            const name = document.getElementById('new-shelf-name').value || '新層板';
-            const h = parseFloat(document.getElementById('new-shelf-h').value) || 35;
-            const w = parseFloat(cab.getAttribute('data-w')) || 70;
-            const d = parseFloat(cab.getAttribute('data-d')) || 24;
-            const shelfHtml = `
-                <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
-                    <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
-                    <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 pointer-events-none">${name} (高${h})</div>
-                    <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}" data-max-d="${d}"></div>
-                </div>`;
-            const wrapper = document.createElement('div'); wrapper.innerHTML = shelfHtml.trim();
-            cab.querySelector('.shelf-list').prepend(wrapper.firstChild);
-            rebindAllEvents(); closeModal('add-shelf-modal'); refresh3DIfOpen();
-        };
-
-        window.createNewToy = function() {
-            const name = document.getElementById('new-toy-name').value || '未命名';
-            const w = parseFloat(document.getElementById('new-toy-w').value) || 10;
-            const h = parseFloat(document.getElementById('new-toy-h').value) || 20;
-            const d = parseFloat(document.getElementById('new-toy-d').value) || 10;
-            const color = document.getElementById('new-toy-color').value;
-            const toyHtml = `
-                <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] overflow-hidden shadow-md text-center select-none"
-                     style="width: ${w * SCALE}px; height: ${h * SCALE}px; background-color: ${color};"
-                     draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" data-d="${d}" data-color="${color}">
-                    <span class="text-content truncate px-1 pointer-events-none">${name}</span>
-                </div>`;
-            const wrapper = document.createElement('div'); wrapper.innerHTML = toyHtml.trim();
-            document.getElementById('staging-area').appendChild(wrapper.firstChild);
-            rebindAllEvents(); closeModal('add-toy-modal'); refresh3DIfOpen();
-        };
-
-        window.exportAsFile = function() {
-            const scriptNode = document.getElementById('init-toys'); if(scriptNode) scriptNode.remove();
-            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cabinet_ultimate_3d.html'; a.click();
-        };
-
-        window.toggleViewMode = function() {
-            is3DMode = !is3DMode;
-            const btn = document.getElementById('view-toggle-btn');
-            if (is3DMode) {
-                document.getElementById('canvas-container').style.display = 'none';
-                document.getElementById('three-container').style.display = 'block';
-                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg><span>返回 2D 平面圖</span>`;
-                btn.classList.replace('from-purple-600', 'from-red-600'); btn.classList.replace('to-indigo-600', 'to-orange-500');
-                generate3DScene();
-                
-                // 【修復核心 1】：正確啟動與接管 3D 渲染引擎 (Animation Loop)
-                if (!reqAnimFrame) {
-                    const animate = function() {
-                        if (!is3DMode) {
-                            reqAnimFrame = null;
-                            return;
-                        }
-                        reqAnimFrame = requestAnimationFrame(animate);
-                        if (orbitControls) orbitControls.update();
-                        if (renderer && scene && camera) renderer.render(scene, camera);
-                    };
-                    animate();
+        function loadFromState() {
+            try {
+                const saved = JSON.parse(document.getElementById('saved-state').textContent);
+                if (saved && saved.length > 0) {
+                    objectsData = saved;
+                    objectsData.forEach(obj => buildObject(obj));
+                    return true;
                 }
-            } else {
-                document.getElementById('canvas-container').style.display = 'block';
-                document.getElementById('three-container').style.display = 'none';
-                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg><span>一鍵轉換 3D 實境</span>`;
-                btn.classList.replace('from-red-600', 'from-purple-600'); btn.classList.replace('to-orange-500', 'to-indigo-600');
-                if (reqAnimFrame) {
-                    cancelAnimationFrame(reqAnimFrame);
-                    reqAnimFrame = null;
-                }
-            }
-        };
+            } catch(e) { console.log('No valid save state found.'); }
+            return false;
+        }
 
-        window.generate3DScene = function() {
-            const container = document.getElementById('three-container');
-            if (!scene) {
-                scene = new THREE.Scene();
-                scene.background = new THREE.Color(0x1a1a1a);
-                camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 2000);
-                camera.position.set(0, 150, 400);
-                renderer = new THREE.WebGLRenderer({ antialias: true });
-                renderer.shadowMap.enabled = true;
-                container.appendChild(renderer.domElement);
-                orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
-                orbitControls.target.set(0, 100, 0);
-                raycaster = new THREE.Raycaster();
-                mouse = new THREE.Vector2();
+        // --- 6. 一鍵載入 54 件經典陣容 (完全精確座標排版) ---
+        function restoreClassicSetup() {
+            if(confirm('這將會清空目前所有進度，載入 54 件經典陣容。確定繼續嗎？')) {
+                // 清空現有
+                objectsData = [];
+                draggableMeshes.forEach(m => scene.remove(m)); draggableMeshes = [];
+                document.querySelectorAll('.map-item').forEach(e => e.remove());
 
-                scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-                const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-                dirLight.position.set(200, 400, 200); dirLight.castShadow = true;
-                scene.add(dirLight);
-                scene.add(new THREE.GridHelper(1000, 50, 0x555555, 0x333333));
+                const shelfHeights = [{h: 65}, {h: 35}, {h: 35}, {h: 35}, {h: 25}, {h: 20}];
+                // 建立三座櫃體 (總寬 215, 扣除立柱約各佔 70cm, 但為了 3D 視覺，各設 75cm)
+                addObj('cabinet', { id: 'cab_L', type: 'cabinet', name: '左區系統櫃', w: 75, h: 235, d: 24, x: -75, y: 0, z: 0, rot: 0, color: '#3d2b1f', img: null, shelves: JSON.parse(JSON.stringify(shelfHeights)) });
+                addObj('cabinet', { id: 'cab_M', type: 'cabinet', name: '中區系統櫃', w: 75, h: 235, d: 24, x: 0, y: 0, z: 0, rot: 0, color: '#3d2b1f', img: null, shelves: JSON.parse(JSON.stringify(shelfHeights)) });
+                addObj('cabinet', { id: 'cab_R', type: 'cabinet', name: '右區系統櫃', w: 75, h: 235, d: 24, x: 75, y: 0, z: 0, rot: 0, color: '#3d2b1f', img: null, shelves: JSON.parse(JSON.stringify(shelfHeights)) });
 
-                // Pointer Move Tracker
-                function updatePointer(e) {
-                    const rect = renderer.domElement.getBoundingClientRect();
-                    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                    if (clientX === 0 && clientY === 0) return;
-                    currentMousePos.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-                    currentMousePos.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-                }
-                renderer.domElement.addEventListener('pointermove', updatePointer);
-                renderer.domElement.addEventListener('touchmove', updatePointer, {passive: true});
+                const tList = [
+                    // --- 底層 (Y = 0) ---
+                    {n:'巴斯存錢筒', w:33, h:41, d:20, c:'#ef4444', x:-90, y:0}, {n:'佐格', w:25, h:40, d:18, c:'#ef4444', x:-55, y:0},
+                    {n:'Joker', w:39, h:50, d:20, c:'#a855f7', x:-10, y:0}, {n:'魔多戒靈', w:23.5, h:46, d:20, c:'#71717a', x:25, y:0},
+                    {n:'Jareth', w:30.5, h:57.5, d:15, c:'#71717a', x:65, y:0}, {n:'巴斯純殼', w:20, h:39, d:15, c:'#ef4444', x:95, y:0},
+                    
+                    // --- 第一層 (Y = 65) ---
+                    {n:'Aragorn', w:20, h:28, d:15, c:'#f59e0b', x:-95, y:65}, {n:'Lurtz', w:22, h:25, d:15, c:'#f59e0b', x:-70, y:65}, {n:'小戒靈', w:11.5, h:15, d:10, c:'#f59e0b', x:-50, y:65},
+                    {n:'Saruman大', w:23, h:26, d:15, c:'#f59e0b', x:-20, y:65}, {n:'烙印手', w:15, h:25, d:15, c:'#71717a', x:0, y:65}, {n:'烙印骷髏', w:12, h:20, d:12, c:'#71717a', x:15, y:65}, {n:'Baphomet', w:14.6, h:25.4, d:12, c:'#71717a', x:30, y:65},
+                    {n:'Dionysus', w:13, h:28, d:15, c:'#eab308', x:60, y:65}, {n:'Aphrodite', w:9, h:15, d:10, c:'#eab308', x:75, y:65},
 
-                // Raycast Double Click (Mobile Friendly)
-                let lastTap = 0, tapStartPos = {x:0, y:0};
-                renderer.domElement.addEventListener('pointerdown', (e) => {
-                    tapStartPos = {x: e.clientX, y: e.clientY};
-                });
-                
-                renderer.domElement.addEventListener('pointerup', (e) => {
-                    if (dragControls && dragControls._dragging) return; 
-                    const dx = Math.abs(e.clientX - tapStartPos.x);
-                    const dy = Math.abs(e.clientY - tapStartPos.y);
-                    if (dx > 10 || dy > 10) return; 
+                    // --- 第二層 (Y = 100) ---
+                    {n:'闇兔女', w:10.5, h:26, d:10, c:'#ec4899', x:-100, y:100}, {n:'闇牛仔', w:9.5, h:22, d:10, c:'#ec4899', x:-88, y:100}, {n:'桃子泳裝', w:10, h:24, d:10, c:'#ec4899', x:-75, y:100},
+                    {n:'初音NT', w:22, h:22, d:15, c:'#06b6d4', x:-20, y:100}, {n:'涼宮兔', w:9.5, h:24, d:10, c:'#ec4899', x:0, y:100}, {n:'白雪', w:9.5, h:19, d:10, c:'#ec4899', x:12, y:100},
+                    {n:'Gantz', w:10, h:25, d:10, c:'#3b82f6', x:60, y:100}, {n:'狼與香料', w:14, h:24, d:12, c:'#3b82f6', x:75, y:100},
 
-                    const now = Date.now();
-                    if (now - lastTap < 400) {
-                        e.preventDefault();
-                        raycaster.setFromCamera(currentMousePos, camera);
-                        const intersects = raycaster.intersectObjects(scene.children, true);
-                        if (intersects.length > 0) {
-                            for (let i = 0; i < intersects.length; i++) {
-                                const ud = intersects[i].object.userData;
-                                if (ud && ud.type) {
-                                    if (ud.type === 'toy') openToyOptions(ud.domElement);
-                                    else if (ud.type === 'shelf') openShelfOptions(ud.domElement);
-                                    else if (ud.type === 'cabinet') openCabinetOptions(ud.domElement);
-                                    break;
-                                }
-                            }
-                        }
-                        lastTap = 0;
-                    } else { lastTap = now; }
-                });
+                    // --- 第三層 (Y = 135) ---
+                    {n:'巴斯電子', w:23, h:28, d:15, c:'#22c55e', x:-90, y:135}, {n:'巴斯一番', w:19, h:26, d:15, c:'#22c55e', x:-65, y:135},
+                    {n:'綠惡魔', w:24, h:26, d:15, c:'#14b8a6', x:-15, y:135}, {n:'蜘蛛人側', w:16, h:17, d:10, c:'#ef4444', x:10, y:135},
+                    {n:'黑魔女', w:19, h:22, d:15, c:'#22c55e', x:65, y:135}, {n:'苦力怕', w:10, h:23, d:10, c:'#22c55e', x:85, y:135},
 
-                renderer.domElement.addEventListener('dragover', (e) => { e.preventDefault(); });
-                renderer.domElement.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    if(!draggedItem) return;
-                    const rect = renderer.domElement.getBoundingClientRect();
-                    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-                    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-                    raycaster.setFromCamera(mouse, camera);
-                    const shelfMeshes = [];
-                    scene.traverse(child => { if (child.userData && child.userData.type === 'shelf') shelfMeshes.push(child); });
-                    const intersects = raycaster.intersectObjects(shelfMeshes);
-                    if (intersects.length > 0) {
-                        handleDropLogic(draggedItem, intersects[0].object.userData.domElement.querySelector('.dropzone'));
-                        refresh3DIfOpen();
-                    }
+                    // --- 第四層 (Y = 170) ---
+                    {n:'Eleven', w:7, h:14.7, d:7, c:'#d946ef', x:-105, y:170}, {n:'H.Eddie', w:7.5, h:18, d:7, c:'#d946ef', x:-96, y:170}, {n:'Dustin', w:7.1, h:14.2, d:7, c:'#d946ef', x:-88, y:170}, {n:'R.Eddie', w:10.5, h:15.6, d:7, c:'#d946ef', x:-78, y:170}, {n:'Vecna', w:8.5, h:16.6, d:7, c:'#d946ef', x:-67, y:170}, {n:'Demogox2', w:21.8, h:16.6, d:7, c:'#d946ef', x:-50, y:170},
+                    {n:'Slimer', w:8, h:16.4, d:7, c:'#d946ef', x:-25, y:170}, {n:'S.Venk', w:9.1, h:17.2, d:7, c:'#d946ef', x:-15, y:170}, {n:'Egon', w:10.5, h:17.6, d:7, c:'#d946ef', x:-4, y:170}, {n:'Facehug', w:13.5, h:15, d:7, c:'#d946ef', x:9, y:170},
+                    {n:'Saruman', w:11, h:18.9, d:7, c:'#f59e0b', x:50, y:170}, {n:'Boromir', w:9.5, h:18.5, d:7, c:'#f59e0b', x:62, y:170}, {n:'Gollum', w:9, h:8, d:7, c:'#f59e0b', x:73, y:170}, {n:'Sarah', w:7.6, h:14.7, d:7, c:'#f59e0b', x:83, y:170}, {n:'Alita', w:8.5, h:12, d:7, c:'#3b82f6', x:93, y:170},
+
+                    // --- 第五層 (Y = 195) ---
+                    {n:'龍貓', w:21, h:7.7, d:10, c:'#10b981', x:-90, y:195}, {n:'小千', w:21, h:7.7, d:10, c:'#10b981', x:-65, y:195},
+                    {n:'Pickle R', w:7.6, h:15.2, d:7, c:'#84cc16', x:-25, y:195}, {n:'Pickle s', w:6.4, h:9.5, d:5, c:'#84cc16', x:-16, y:195}, {n:'超人狗', w:10, h:16, d:7, c:'#3b82f6', x:-6, y:195}, {n:'ELLO', w:7.5, h:11, d:7, c:'#84cc16', x:5, y:195},
+                    {n:'開司', w:14, h:14, d:10, c:'#3b82f6', x:50, y:195}, {n:'黑魔導', w:10, h:13, d:7, c:'#3b82f6', x:64, y:195}, {n:'賽車', w:8, h:14, d:7, c:'#3b82f6', x:75, y:195}, {n:'信長', w:13, h:12, d:10, c:'#3b82f6', x:88, y:195}
+                ];
+
+                tList.forEach(t => {
+                    addObj('toy', { id: generateId(), type: 'toy', name: t.n, w: t.w, h: t.h, d: t.d, x: t.x, y: t.y, z: 0, rot: 0, color: t.c, img: null, shelves: [] });
                 });
             }
+        }
 
-            // Sync Viewport Size
-            renderer.setSize(container.clientWidth, container.clientHeight);
-            camera.aspect = container.clientWidth / container.clientHeight;
-            camera.updateProjectionMatrix();
-
-            // 【修復核心 2】：徹底釋放 WebGL 記憶體 (Dispose Memory Leak)
-            const objectsToRemove = scene.children.filter(child => child.type === 'Group' || (child.userData && child.userData.type));
-            objectsToRemove.forEach(obj => {
-                obj.traverse(child => {
-                    if (child.isMesh) {
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (child.material.map) child.material.map.dispose();
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(m => m.dispose());
-                            } else {
-                                child.material.dispose();
-                            }
-                        }
-                    }
-                });
-                scene.remove(obj);
-            });
-            draggableToys = [];
-
-            const textureLoader = new THREE.TextureLoader();
-            const matWoodDef = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.8 });
-            const matShelfDef = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 });
-            let defaultPosX = -100; 
-
-            // Rebuild from 2D DOM
-            document.querySelectorAll('.cabinet-group').forEach((cabEl) => {
-                const w = parseFloat(cabEl.getAttribute('data-w')) || 70;
-                const d = parseFloat(cabEl.getAttribute('data-d')) || 24;
-                const frameImg = cabEl.getAttribute('data-frame-img');
-                const matWood = frameImg ? new THREE.MeshStandardMaterial({ map: textureLoader.load(frameImg) }) : matWoodDef;
-                const woodThick = 2; 
-
-                let totalH = 0;
-                cabEl.querySelectorAll('.shelf-container').forEach(sh => { totalH += (parseFloat(sh.style.height) / SCALE) + woodThick; });
-
-                const cabGroup = new THREE.Group();
-                const cabinetData = { type: 'cabinet', domElement: cabEl };
-
-                const geoSide = new THREE.BoxGeometry(woodThick, totalH, d);
-                const meshL = new THREE.Mesh(geoSide, matWood); meshL.position.set(-w/2 - woodThick/2, totalH/2, 0); meshL.userData = cabinetData;
-                const meshR = new THREE.Mesh(geoSide, matWood); meshR.position.set(w/2 + woodThick/2, totalH/2, 0); meshR.userData = cabinetData;
-                const geoTop = new THREE.BoxGeometry(w + woodThick*2, woodThick, d);
-                const meshT = new THREE.Mesh(geoTop, matWood); meshT.position.set(0, totalH + woodThick/2, 0); meshT.userData = cabinetData;
-                const meshB = new THREE.Mesh(geoTop, matWood); meshB.position.set(0, woodThick/2, 0); meshB.userData = cabinetData;
-                cabGroup.add(meshL, meshR, meshT, meshB);
-
-                let currentY = woodThick; 
-                const shelves = Array.from(cabEl.querySelectorAll('.shelf-container')).reverse();
-
-                shelves.forEach(shelfEl => {
-                    const shelfH = parseFloat(shelfEl.style.height) / SCALE;
-                    const dropzone = shelfEl.querySelector('.dropzone');
-                    const bgImg = dropzone.getAttribute('data-img');
-                    
-                    const sMat = bgImg ? new THREE.MeshStandardMaterial({ map: textureLoader.load(bgImg) }) : matShelfDef;
-                    const meshS = new THREE.Mesh(new THREE.BoxGeometry(w, woodThick, d), sMat);
-                    meshS.position.set(0, currentY + woodThick/2, 0); 
-                    meshS.userData = { type: 'shelf', domElement: shelfEl };
-                    cabGroup.add(meshS);
-                    
-                    currentY += woodThick; 
-                    let tX = -w/2; let tZ = -d/2; let rowMaxD = 0;
-
-                    dropzone.querySelectorAll('.toy-block').forEach(toyEl => {
-                        const tw = parseFloat(toyEl.getAttribute('data-w'));
-                        const th = parseFloat(toyEl.getAttribute('data-h'));
-                        const td = parseFloat(toyEl.getAttribute('data-d')) || tw;
-                        const tColor = toyEl.getAttribute('data-color') || '#ffffff';
-                        const tImg = toyEl.getAttribute('data-img');
-
-                        if (tX + tw > w/2) { tX = -w/2; tZ += rowMaxD + 1; rowMaxD = 0; }
-
-                        const tMat = tImg ? new THREE.MeshStandardMaterial({ map: textureLoader.load(tImg) }) : new THREE.MeshStandardMaterial({ color: new THREE.Color(tColor) });
-                        const meshToy = new THREE.Mesh(new THREE.BoxGeometry(tw, th, td), tMat);
-                        meshToy.position.set(tX + tw/2, currentY + th/2, tZ + td/2);
-                        meshToy.userData = { type: 'toy', domElement: toyEl };
-                        cabGroup.add(meshToy);
-                        draggableToys.push(meshToy);
-
-                        tX += tw + 1; rowMaxD = Math.max(rowMaxD, td);
-                    });
-                    currentY += shelfH;
-                });
-
-                let definedX = cabEl.getAttribute('data-posx');
-                let posX = definedX !== "" && definedX !== null ? parseFloat(definedX) : defaultPosX;
-                let posZ = parseFloat(cabEl.getAttribute('data-posz')) || 0;
-                let rotY = parseFloat(cabEl.getAttribute('data-roty')) || 0;
-
-                cabGroup.position.set(posX, 0, posZ);
-                cabGroup.rotation.y = THREE.MathUtils.degToRad(rotY);
-                scene.add(cabGroup);
-                if (definedX === "" || definedX === null) defaultPosX += w + woodThick*2 + 5; 
-            });
-
-            // Initialize 3D Drag Controls (Ghosting & Highlighting)
-            if (dragControls) dragControls.dispose();
-            dragControls = new THREE.DragControls(draggableToys, camera, renderer.domElement);
-            
-            let highlightedShelf = null;
-
-            dragControls.addEventListener('dragstart', (e) => {
-                orbitControls.enabled = false;
-                e.object.material.transparent = true;
-                e.object.material.opacity = 0.6;
-                e.object.material.emissive.setHex(0x444444);
-                e.object._originalY = e.object.position.y;
-            });
-            
-            dragControls.addEventListener('drag', (e) => { 
-                e.object.position.y = e.object._originalY;
-                raycaster.setFromCamera(currentMousePos, camera);
-                const shelfMeshes = [];
-                scene.traverse(child => { if (child.userData && child.userData.type === 'shelf') shelfMeshes.push(child); });
-                const intersects = raycaster.intersectObjects(shelfMeshes);
-                
-                if (intersects.length > 0) {
-                    const targetShelf = intersects[0].object;
-                    if (highlightedShelf !== targetShelf) {
-                        if (highlightedShelf) highlightedShelf.material.emissive.setHex(0x000000);
-                        highlightedShelf = targetShelf;
-                        if (!highlightedShelf.material.isClonedForHighlight) {
-                            highlightedShelf.material = highlightedShelf.material.clone();
-                            highlightedShelf.material.isClonedForHighlight = true;
-                        }
-                        highlightedShelf.material.emissive.setHex(0xaa6600); // 橘色著陸光圈
-                    }
-                } else {
-                    if (highlightedShelf) {
-                        highlightedShelf.material.emissive.setHex(0x000000);
-                        highlightedShelf = null;
-                    }
-                }
-            });
-            
-            dragControls.addEventListener('dragend', (e) => {
-                orbitControls.enabled = true;
-                e.object.material.transparent = false;
-                e.object.material.opacity = 1.0;
-                e.object.material.emissive.setHex(0x000000);
-                
-                if (highlightedShelf) {
-                    highlightedShelf.material.emissive.setHex(0x000000);
-                    handleDropLogic(e.object.userData.domElement, highlightedShelf.userData.domElement.querySelector('.dropzone'));
-                    highlightedShelf = null;
-                } else {
-                    document.getElementById('staging-area').appendChild(e.object.userData.domElement);
-                }
-                refresh3DIfOpen(); 
-            });
+        // 初始化
+        window.onload = () => {
+            init3D();
+            if(!loadFromState()) {
+                // 如果沒有存檔，給個預設空殼
+                addObj('floor');
+                addObj('cabinet', { id: 'cab_M', type: 'cabinet', name: '預設系統櫃', w: 75, h: 235, d: 24, x: 0, y: 0, z: 0, rot: 0, color: '#3d2b1f', img: null, shelves: [{h: 65}, {h: 35}, {h: 35}, {h: 35}, {h: 25}, {h: 20}] });
+            }
         };
 
         window.addEventListener('resize', () => {
-            const container = document.getElementById('three-container');
-            if(camera && renderer && is3DMode) {
+            const container = document.getElementById('view-3d');
+            if(camera && renderer) {
                 camera.aspect = container.clientWidth / container.clientHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(container.clientWidth, container.clientHeight);
             }
         });
-
-        window.addEventListener('DOMContentLoaded', () => {
-            const scriptNode = document.getElementById('init-toys');
-            if (!scriptNode) return; // Skip if exported
-            const canvas = document.getElementById('cabinet-canvas');
-            const btnContainer = canvas.querySelector('.btn-add-cab-wrapper');
-
-            function buildCabinet(id, title, w, d) {
-                const cabHtml = `
-                    <div class="cabinet-group flex flex-col bg-[#2a2a2a] border-x-[10px] border-t-[10px] border-[#5c4033] h-full shrink-0 relative group" id="${id}" data-w="${w}" data-d="${d}" data-posx="" data-posz="0" data-roty="0">
-                        <div class="cabinet-header w-full bg-[#3d2b1f] text-amber-500 font-bold text-xs md:text-sm text-center py-2 border-b-4 border-[#2a1d15] relative z-20 cursor-pointer hover:bg-[#4d3b2f]" title="雙擊設定尺寸與3D參數">
-                            <span class="cabinet-title-text">${title}</span> (寬 ${w} / 深 ${d})
-                            <button onclick="openAddShelf('${id}'); event.stopPropagation();" class="absolute left-2 top-2 text-emerald-400 hover:text-emerald-300 text-xs">+ 層板</button>
-                        </div>
-                        <div class="shelf-list flex flex-col flex-1 justify-end"></div>
-                    </div>`;
-                const wrapper = document.createElement('div'); wrapper.innerHTML = cabHtml.trim();
-                canvas.insertBefore(wrapper.firstChild, btnContainer);
-                return document.getElementById(id);
-            }
-
-            function buildShelf(cabEl, name, w, h, d) {
-                const shelfHtml = `
-                    <div class="shelf-container relative group border-b-[8px] border-[#8b5a2b]" style="height: ${h * SCALE}px; width: ${w * SCALE}px;">
-                        <div class="resize-handle" onmousedown="startResizeShelf(event, this)" ontouchstart="startResizeShelf(event, this)"></div>
-                        <div class="shelf-label absolute -top-[18px] left-1 text-[10px] text-amber-500/70 font-bold z-10 pointer-events-none">${name} (高${h})</div>
-                        <div class="dropzone shelf-bg w-full h-full" data-name="${name}" data-max-w="${w}" data-max-h="${h}" data-max-d="${d}"></div>
-                    </div>`;
-                const wrapper = document.createElement('div'); wrapper.innerHTML = shelfHtml.trim();
-                cabEl.querySelector('.shelf-list').prepend(wrapper.firstChild); 
-                return cabEl.querySelector('.shelf-container:first-child .dropzone');
-            }
-
-            function injectToy(zone, name, w, h, d, color) {
-                const toyHtml = `
-                    <div class="toy-block rounded-sm flex items-center justify-center font-bold text-black text-[10px] overflow-hidden shadow-md text-center select-none"
-                         style="width: ${w * SCALE}px; height: ${h * SCALE}px; background-color: ${color};"
-                         draggable="true" data-name="${name}" data-w="${w}" data-h="${h}" data-d="${d}" data-color="${color}">
-                        <span class="text-content truncate px-1 pointer-events-none">${name}</span>
-                    </div>`;
-                const wrapper = document.createElement('div'); wrapper.innerHTML = toyHtml.trim();
-                zone.appendChild(wrapper.firstChild);
-            }
-
-            const C_Ghibli="#8fbc8f", C_Weird="#f08080", C_Anime="#87cefa", C_Mini="#dda0dd", C_Girls="#ffb6c1", C_LOTR="#ffd700", C_Pixar="#d3d3d3", C_Lego="#20b2aa";
-
-            const cabL = buildCabinet('cab_L', '左區', 70, 24);
-            const cabM = buildCabinet('cab_M', '中區', 70, 24);
-            const cabR = buildCabinet('cab_R', '右區', 70, 24);
-
-            // Left Cabinet
-            const L0 = buildShelf(cabL, '底層', 70, 65, 999);
-            injectToy(L0, '巴斯存錢筒超大', 33, 41, 20, C_Pixar); injectToy(L0, '佐格', 25, 40, 19, C_Pixar);
-            const L1 = buildShelf(cabL, '第1層', 70, 35, 24);
-            injectToy(L1, 'ARAGORN', 20, 28, 17.1, C_LOTR); injectToy(L1, 'LURTZ', 22.3, 25.2, 20, C_LOTR); injectToy(L1, '戒靈小', 11.5, 15, 11.5, C_LOTR);
-            const L2 = buildShelf(cabL, '第2層', 70, 35, 24);
-            injectToy(L2, '兔女郎', 10.5, 26, 10.5, C_Girls); injectToy(L2, '牛仔褲', 9.5, 22, 9.5, C_Girls); injectToy(L2, '桃子', 10, 24, 10, C_Girls);
-            const L3 = buildShelf(cabL, '第3層', 70, 35, 24);
-            injectToy(L3, '巴斯電子', 23, 28, 18, C_Pixar); injectToy(L3, '巴斯一番', 19, 26, 15, C_Pixar);
-            const L4 = buildShelf(cabL, '第4層(淺)', 70, 25, 21);
-            injectToy(L4, 'ELEVEN', 7, 14.7, 6.2, C_Mini); injectToy(L4, 'HELLFIRE', 7.5, 18, 3.5, C_Mini); injectToy(L4, 'DUSTIN', 7.1, 14.2, 6.2, C_Mini);
-            injectToy(L4, 'ROCKSTAR', 10.5, 15.6, 10, C_Mini); injectToy(L4, 'VECNA', 8.5, 16.6, 7.1, C_Mini); injectToy(L4, 'DEMOGORGON', 10.9, 16.6, 10.9, C_Mini); injectToy(L4, 'DEMOGORGON', 10.9, 16.6, 10.9, C_Mini);
-            const L5 = buildShelf(cabL, '第5層(淺)', 70, 20, 21);
-            injectToy(L5, '龍貓', 21, 7.7, 10.4, C_Ghibli); injectToy(L5, '小千', 21, 7.7, 10.4, C_Ghibli);
-            buildShelf(cabL, '頂層擴充區', 70, 40, 21);
-
-            // Middle Cabinet
-            const M0 = buildShelf(cabM, '底層', 70, 65, 999);
-            injectToy(M0, 'THE JOKER', 39, 50, 37, C_Weird); injectToy(M0, '魔多戒靈', 23.5, 46, 23.5, C_LOTR);
-            const M1 = buildShelf(cabM, '第1層', 70, 35, 24);
-            injectToy(M1, 'SARUMAN大', 22.8, 25.7, 17.6, C_LOTR); injectToy(M1, '烙印手', 15, 25, 14, C_LOTR); injectToy(M1, '烙印骷髏', 12, 20, 13, C_LOTR); injectToy(M1, '巴風特', 14.6, 25.4, 12.1, C_LOTR);
-            const M2 = buildShelf(cabM, '第2層', 70, 35, 24);
-            injectToy(M2, '初音NT', 22, 22, 22, C_Anime); injectToy(M2, '涼宮兔女', 9.5, 24, 9.5, C_Girls); injectToy(M2, '白雪', 9.5, 19, 9.5, C_Girls);
-            const M3 = buildShelf(cabM, '第3層', 70, 35, 24);
-            injectToy(M3, '綠惡魔', 24, 26, 18, C_Lego); injectToy(M3, '蜘蛛(側)', 16, 17, 28, C_Lego);
-            const M4 = buildShelf(cabM, '第4層(淺)', 70, 25, 21);
-            injectToy(M4, 'SLIMER', 8, 16.4, 7, C_Mini); injectToy(M4, 'S.VENKMAN', 9.1, 17.2, 8.1, C_Mini); injectToy(M4, 'EGON', 10.5, 17.6, 9.5, C_Mini); injectToy(M4, 'FACEHUGGER', 13.5, 15, 7, C_Mini);
-            const M5 = buildShelf(cabM, '第5層(淺)', 70, 20, 21);
-            injectToy(M5, 'Pickle', 7.6, 15.2, 5.1, C_Weird); injectToy(M5, 'P.small', 6.4, 9.5, 6.4, C_Weird); injectToy(M5, '超人', 10, 16, 5, C_Weird); injectToy(M5, 'ELLO', 7.5, 11, 5, C_Weird);
-            buildShelf(cabM, '頂層擴充區', 70, 40, 21);
-
-            // Right Cabinet
-            const R0 = buildShelf(cabR, '底層', 70, 65, 999);
-            injectToy(R0, 'JARETH AND SARAH...', 30.5, 57.5, 30.5, C_Weird); injectToy(R0, '巴斯殼', 20, 39, 20, C_Pixar);
-            const R1 = buildShelf(cabR, '第1層', 70, 35, 24);
-            injectToy(R1, '戴歐尼修斯', 12.7, 27.9, 11.4, C_Pixar); injectToy(R1, '阿芙蘿黛蒂', 8.9, 15.2, 8.9, C_Pixar);
-            const R2 = buildShelf(cabR, '第2層', 70, 35, 24);
-            injectToy(R2, 'Gantz', 10, 25, 10, C_Anime); injectToy(R2, '狼香料', 14, 24, 14, C_Anime);
-            const R3 = buildShelf(cabR, '第3層', 70, 35, 24);
-            injectToy(R3, '黑魔女', 19.1, 22.2, 10.16, C_Ghibli); injectToy(R3, '苦力怕', 10, 23, 8, C_Lego);
-            const R4 = buildShelf(cabR, '第4層(淺)', 70, 25, 21);
-            injectToy(R4, 'SARUMAN', 11, 18.9, 11, C_LOTR); injectToy(R4, 'BOROMIR', 9.5, 18.5, 9.3, C_LOTR); injectToy(R4, 'GOLLUM', 9, 8, 7, C_LOTR); injectToy(R4, 'SARAH', 7.6, 14.7, 5, C_LOTR); injectToy(R4, 'ALITA', 8.5, 12, 4.5, C_LOTR);
-            const R5 = buildShelf(cabR, '第5層(淺)', 70, 20, 21);
-            injectToy(R5, '開司', 14, 14, 14, C_Anime); injectToy(R5, '黑魔', 10, 13, 10, C_Anime); injectToy(R5, '賽車', 8, 14, 8, C_Anime); injectToy(R5, '信長', 13, 12, 11, C_Anime);
-            buildShelf(cabR, '頂層擴充區', 70, 40, 21);
-
-            setTimeout(() => window.rebindAllEvents(), 100);
-        });
     </script>
-    <script id="init-toys"></script>
 </body>
 </html>
