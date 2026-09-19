@@ -307,7 +307,7 @@
         let activeObj = null, activeCabinet = null, uploadType = ''; 
         
         // 3D Engine Vars
-        let scene, camera, renderer, orbitControls, reqAnimFrame, raycaster, mouse, currentMousePos = new THREE.Vector2();
+        let scene, camera, renderer, orbitControls, reqAnimFrame = null, raycaster, mouse, currentMousePos = new THREE.Vector2();
         let draggableToys = [], dragControls;
 
         window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); };
@@ -321,12 +321,33 @@
             document.querySelectorAll('.toy-block').forEach(block => {
                 if (block.dataset.bound === 'true') return;
                 block.dataset.bound = 'true';
-                block.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); openToyOptions(block); });
+                
+                let clickTimer = null;
+                const handleDoubleTap = (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    openToyOptions(block);
+                };
+
+                // Mouse Double Click
+                block.addEventListener('dblclick', handleDoubleTap);
+                
+                // Drag and Drop (Mouse)
                 block.addEventListener('dragstart', () => { draggedItem = block; setTimeout(() => block.classList.add('dragging'), 0); });
                 block.addEventListener('dragend', () => { block.classList.remove('dragging'); draggedItem = null; document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over')); });
                 
+                // Touch Events (including Double Tap simulation)
                 block.addEventListener('touchstart', (e) => {
                     if(e.touches.length > 1) return;
+                    
+                    // Double Tap Logic for Touch
+                    if (clickTimer == null) {
+                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
+                    } else {
+                        clearTimeout(clickTimer); clickTimer = null;
+                        handleDoubleTap(e);
+                        return; // 雙擊後不啟動拖曳
+                    }
+
                     draggedItem = block;
                     const touch = e.touches[0];
                     const rect = block.getBoundingClientRect();
@@ -349,7 +370,7 @@
                     const touch = e.touches[0];
                     const dx = Math.abs(touch.clientX - block.dataset.startX);
                     const dy = Math.abs(touch.clientY - block.dataset.startY);
-                    if (dx > 5 || dy > 5) block.dataset.didMove = 'true'; // 判定為滑動而非點擊
+                    if (dx > 5 || dy > 5) block.dataset.didMove = 'true';
 
                     touchGhost.style.left = (touch.clientX - touchOffsetX) + 'px';
                     touchGhost.style.top = (touch.clientY - touchOffsetY) + 'px';
@@ -367,42 +388,31 @@
                 }, {passive: false});
 
                 block.addEventListener('touchend', (e) => {
-                    let isDoubleTap = false;
-                    const currentTime = Date.now();
-                    const tapLength = currentTime - (block.dataset.lastTap || 0);
-                    // 若沒有移動且連續點擊小於 400 毫秒，判定為雙擊
-                    if (block.dataset.didMove !== 'true' && tapLength < 400 && tapLength > 0) {
-                        isDoubleTap = true;
-                        block.dataset.lastTap = 0;
-                    } else {
-                        block.dataset.lastTap = currentTime;
-                    }
-
                     if (touchGhost) {
                         touchGhost.remove(); touchGhost = null; block.classList.remove('dragging');
                         document.querySelectorAll('.dropzone').forEach(dz => dz.classList.remove('drag-over'));
                         
-                        if (activeDropzone === 'three-canvas' && is3DMode) {
-                            const touch = e.changedTouches[0];
-                            const rect = renderer.domElement.getBoundingClientRect();
-                            mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-                            mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-                            raycaster.setFromCamera(mouse, camera);
-                            const shelfMeshes = [];
-                            scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
-                            const intersects = raycaster.intersectObjects(shelfMeshes);
-                            if(intersects.length > 0) {
-                                handleDropLogic(block, intersects[0].object.userData.domElement.querySelector('.dropzone'));
+                        if (block.dataset.didMove === 'true') {
+                            if (activeDropzone === 'three-canvas' && is3DMode) {
+                                const touch = e.changedTouches[0];
+                                const rect = renderer.domElement.getBoundingClientRect();
+                                mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+                                mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+                                raycaster.setFromCamera(mouse, camera);
+                                const shelfMeshes = [];
+                                scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
+                                const intersects = raycaster.intersectObjects(shelfMeshes);
+                                if(intersects.length > 0) {
+                                    handleDropLogic(block, intersects[0].object.userData.domElement.querySelector('.dropzone'));
+                                    refresh3DIfOpen();
+                                }
+                            } else if (activeDropzone && activeDropzone !== block.parentElement) {
+                                handleDropLogic(block, activeDropzone);
                                 refresh3DIfOpen();
                             }
-                        } else if (activeDropzone && activeDropzone !== block.parentElement) {
-                            handleDropLogic(block, activeDropzone);
-                            refresh3DIfOpen();
                         }
                         draggedItem = null; activeDropzone = null;
                     }
-
-                    if (isDoubleTap) { e.preventDefault(); e.stopPropagation(); openToyOptions(block); }
                 });
             });
 
@@ -411,20 +421,21 @@
                 if (dropzone.dataset.bound === 'true') return;
                 dropzone.dataset.bound = 'true';
                 
+                let clickTimer = null;
                 const handleShelfTap = (e) => {
                     if (e.target !== dropzone || dropzone.id === 'staging-area') return; 
                     e.preventDefault(); e.stopPropagation(); openShelfOptions(dropzone.closest('.shelf-container'));
                 };
 
                 dropzone.addEventListener('dblclick', handleShelfTap);
-                dropzone.addEventListener('touchend', (e) => {
-                    if (e.target !== dropzone || dropzone.id === 'staging-area') return;
-                    const currentTime = Date.now();
-                    const tapLength = currentTime - (dropzone.dataset.lastTap || 0);
-                    if (tapLength < 400 && tapLength > 0) {
-                        handleShelfTap(e); dropzone.dataset.lastTap = 0;
-                    } else { dropzone.dataset.lastTap = currentTime; }
-                });
+                dropzone.addEventListener('touchstart', (e) => {
+                    if (clickTimer == null) {
+                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
+                    } else {
+                        clearTimeout(clickTimer); clickTimer = null;
+                        handleShelfTap(e);
+                    }
+                }, {passive: true});
 
                 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
                 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
@@ -441,16 +452,18 @@
                 if (header.dataset.bound === 'true') return;
                 header.dataset.bound = 'true';
                 
+                let clickTimer = null;
                 const handleCabTap = (e) => { e.preventDefault(); e.stopPropagation(); openCabinetOptions(header.closest('.cabinet-group')); };
                 
                 header.addEventListener('dblclick', handleCabTap);
-                header.addEventListener('touchend', (e) => {
-                    const currentTime = Date.now();
-                    const tapLength = currentTime - (header.dataset.lastTap || 0);
-                    if (tapLength < 400 && tapLength > 0) {
-                        handleCabTap(e); header.dataset.lastTap = 0;
-                    } else { header.dataset.lastTap = currentTime; }
-                });
+                header.addEventListener('touchstart', (e) => {
+                    if (clickTimer == null) {
+                        clickTimer = setTimeout(() => { clickTimer = null; }, 400);
+                    } else {
+                        clearTimeout(clickTimer); clickTimer = null;
+                        handleCabTap(e);
+                    }
+                }, {passive: true});
             });
         }
 
@@ -702,12 +715,29 @@
                 btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg><span>返回 2D 平面圖</span>`;
                 btn.classList.replace('from-purple-600', 'from-red-600'); btn.classList.replace('to-indigo-600', 'to-orange-500');
                 generate3DScene();
+                
+                // 【修復核心 1】：正確啟動與接管 3D 渲染引擎 (Animation Loop)
+                if (!reqAnimFrame) {
+                    const animate = function() {
+                        if (!is3DMode) {
+                            reqAnimFrame = null;
+                            return;
+                        }
+                        reqAnimFrame = requestAnimationFrame(animate);
+                        if (orbitControls) orbitControls.update();
+                        if (renderer && scene && camera) renderer.render(scene, camera);
+                    };
+                    animate();
+                }
             } else {
                 document.getElementById('canvas-container').style.display = 'block';
                 document.getElementById('three-container').style.display = 'none';
                 btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg><span>一鍵轉換 3D 實境</span>`;
                 btn.classList.replace('from-red-600', 'from-purple-600'); btn.classList.replace('to-orange-500', 'to-indigo-600');
-                if (reqAnimFrame) cancelAnimationFrame(reqAnimFrame);
+                if (reqAnimFrame) {
+                    cancelAnimationFrame(reqAnimFrame);
+                    reqAnimFrame = null;
+                }
             }
         };
 
@@ -732,7 +762,7 @@
                 scene.add(dirLight);
                 scene.add(new THREE.GridHelper(1000, 50, 0x555555, 0x333333));
 
-                // Pointer Move Tracker for 3D Drop & Interaction (整合滑鼠與觸控)
+                // Pointer Move Tracker
                 function updatePointer(e) {
                     const rect = renderer.domElement.getBoundingClientRect();
                     const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
@@ -744,17 +774,17 @@
                 renderer.domElement.addEventListener('pointermove', updatePointer);
                 renderer.domElement.addEventListener('touchmove', updatePointer, {passive: true});
 
-                // Raycast Double Click (跨平台精準雙擊)
+                // Raycast Double Click (Mobile Friendly)
                 let lastTap = 0, tapStartPos = {x:0, y:0};
                 renderer.domElement.addEventListener('pointerdown', (e) => {
                     tapStartPos = {x: e.clientX, y: e.clientY};
                 });
                 
                 renderer.domElement.addEventListener('pointerup', (e) => {
-                    if (dragControls && dragControls._dragging) return; // 拖曳中不觸發
+                    if (dragControls && dragControls._dragging) return; 
                     const dx = Math.abs(e.clientX - tapStartPos.x);
                     const dy = Math.abs(e.clientY - tapStartPos.y);
-                    if (dx > 10 || dy > 10) return; // 判定為滑動縮放，非點擊
+                    if (dx > 10 || dy > 10) return; 
 
                     const now = Date.now();
                     if (now - lastTap < 400) {
@@ -776,7 +806,6 @@
                     } else { lastTap = now; }
                 });
 
-                // 2D to 3D HTML Drag Drop Event
                 renderer.domElement.addEventListener('dragover', (e) => { e.preventDefault(); });
                 renderer.domElement.addEventListener('drop', (e) => {
                     e.preventDefault();
@@ -786,16 +815,13 @@
                     mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
                     raycaster.setFromCamera(mouse, camera);
                     const shelfMeshes = [];
-                    scene.traverse(child => { if (child.userData.type === 'shelf') shelfMeshes.push(child); });
+                    scene.traverse(child => { if (child.userData && child.userData.type === 'shelf') shelfMeshes.push(child); });
                     const intersects = raycaster.intersectObjects(shelfMeshes);
                     if (intersects.length > 0) {
                         handleDropLogic(draggedItem, intersects[0].object.userData.domElement.querySelector('.dropzone'));
                         refresh3DIfOpen();
                     }
                 });
-
-                function animate() { reqAnimFrame = requestAnimationFrame(animate); orbitControls.update(); renderer.render(scene, camera); }
-                animate();
             }
 
             // Sync Viewport Size
@@ -803,9 +829,24 @@
             camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
 
-            // Clear old scene objects (except lights/grid)
-            const objectsToRemove = scene.children.filter(child => child.type === 'Group' || child.userData.type);
-            objectsToRemove.forEach(obj => scene.remove(obj));
+            // 【修復核心 2】：徹底釋放 WebGL 記憶體 (Dispose Memory Leak)
+            const objectsToRemove = scene.children.filter(child => child.type === 'Group' || (child.userData && child.userData.type));
+            objectsToRemove.forEach(obj => {
+                obj.traverse(child => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (child.material.map) child.material.map.dispose();
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => m.dispose());
+                            } else {
+                                child.material.dispose();
+                            }
+                        }
+                    }
+                });
+                scene.remove(obj);
+            });
             draggableToys = [];
 
             const textureLoader = new THREE.TextureLoader();
@@ -884,7 +925,7 @@
                 if (definedX === "" || definedX === null) defaultPosX += w + woodThick*2 + 5; 
             });
 
-            // Initialize 3D Drag Controls (加入虛影與著陸光圈)
+            // Initialize 3D Drag Controls (Ghosting & Highlighting)
             if (dragControls) dragControls.dispose();
             dragControls = new THREE.DragControls(draggableToys, camera, renderer.domElement);
             
@@ -892,7 +933,6 @@
 
             dragControls.addEventListener('dragstart', (e) => {
                 orbitControls.enabled = false;
-                // 1. 拖曳開始：使物件變為半透明虛影
                 e.object.material.transparent = true;
                 e.object.material.opacity = 0.6;
                 e.object.material.emissive.setHex(0x444444);
@@ -900,9 +940,7 @@
             });
             
             dragControls.addEventListener('drag', (e) => { 
-                e.object.position.y = e.object._originalY; // 維持 Y 軸高度
-
-                // 2. 動態追蹤：尋找虛影下方的層板並發光
+                e.object.position.y = e.object._originalY;
                 raycaster.setFromCamera(currentMousePos, camera);
                 const shelfMeshes = [];
                 scene.traverse(child => { if (child.userData && child.userData.type === 'shelf') shelfMeshes.push(child); });
@@ -913,13 +951,11 @@
                     if (highlightedShelf !== targetShelf) {
                         if (highlightedShelf) highlightedShelf.material.emissive.setHex(0x000000);
                         highlightedShelf = targetShelf;
-                        // 確保層板材質獨立，避免一次點亮所有層板
                         if (!highlightedShelf.material.isClonedForHighlight) {
                             highlightedShelf.material = highlightedShelf.material.clone();
                             highlightedShelf.material.isClonedForHighlight = true;
                         }
-                        // 給予層板暖橘色的著陸光芒
-                        highlightedShelf.material.emissive.setHex(0xaa6600);
+                        highlightedShelf.material.emissive.setHex(0xaa6600); // 橘色著陸光圈
                     }
                 } else {
                     if (highlightedShelf) {
@@ -931,18 +967,15 @@
             
             dragControls.addEventListener('dragend', (e) => {
                 orbitControls.enabled = true;
-                // 3. 拖曳結束：恢復實體
                 e.object.material.transparent = false;
                 e.object.material.opacity = 1.0;
                 e.object.material.emissive.setHex(0x000000);
                 
                 if (highlightedShelf) {
                     highlightedShelf.material.emissive.setHex(0x000000);
-                    // 執行真實的換層邏輯
                     handleDropLogic(e.object.userData.domElement, highlightedShelf.userData.domElement.querySelector('.dropzone'));
                     highlightedShelf = null;
                 } else {
-                    // 若拖到櫃外空間，直接退回左側暫存區
                     document.getElementById('staging-area').appendChild(e.object.userData.domElement);
                 }
                 refresh3DIfOpen(); 
